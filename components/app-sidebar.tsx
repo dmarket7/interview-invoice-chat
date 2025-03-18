@@ -3,7 +3,7 @@
 import type { User } from 'next-auth';
 import { useRouter } from 'next/navigation';
 
-import { PlusIcon } from '@/components/icons';
+import { FileIcon, PlusIcon } from '@/components/icons';
 import { SidebarHistory } from '@/components/sidebar-history';
 import { SidebarUserNav } from '@/components/sidebar-user-nav';
 import { Button } from '@/components/ui/button';
@@ -18,7 +18,7 @@ import {
 import Link from 'next/link';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
-export function AppSidebar({ user }: { user: User | undefined }) {
+export function AppSidebar({ user }: { user: User | undefined; }) {
   const router = useRouter();
   const { setOpenMobile } = useSidebar();
 
@@ -59,6 +59,26 @@ export function AppSidebar({ user }: { user: User | undefined }) {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
+        {user && (
+          <div className="mb-4 px-4">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() => {
+                    setOpenMobile(false);
+                    router.push('/invoice');
+                  }}
+                >
+                  <FileIcon size={16} />
+                  <span className="ml-2">Process Invoices</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent align="center">Upload and process PDF invoices</TooltipContent>
+            </Tooltip>
+          </div>
+        )}
         <SidebarHistory user={user} />
       </SidebarContent>
       <SidebarFooter>{user && <SidebarUserNav user={user} />}</SidebarFooter>
