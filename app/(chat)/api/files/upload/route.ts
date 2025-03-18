@@ -937,10 +937,20 @@ function validateInvoiceData(data: any) {
 
     // If total doesn't match items sum (with some tolerance for rounding errors)
     if (Math.abs(calculatedTotalRounded - validated.total) > 1) {
-      console.log(`Correcting inconsistent total: ${validated.total} to match sum of line items: ${calculatedTotalRounded}`);
+      // Check if the difference could be due to tax not included in line items
+      const tax = validated.tax || 0;
+      const totalWithTax = parseFloat((calculatedTotalRounded + tax).toFixed(2));
 
-      // If the difference is significant, we trust the items calculation more than the extracted total
-      validated.total = calculatedTotalRounded;
+      // If the total with tax is close to the extracted total, we keep the extracted total
+      if (Math.abs(totalWithTax - validated.total) <= 1) {
+        console.log(`Total discrepancy likely due to tax. Keeping extracted total: ${validated.total}`);
+      } else {
+        console.log(`Correcting inconsistent total: ${validated.total} to match sum of line items + tax: ${totalWithTax}`);
+
+        // If there's still a significant discrepancy even after accounting for tax,
+        // update the total to be line items + tax
+        validated.total = totalWithTax;
+      }
     }
   }
 
