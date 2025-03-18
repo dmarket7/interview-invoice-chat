@@ -171,6 +171,9 @@ export async function POST(request: Request) {
           // Insert line items
           if (extractedData.items && Array.isArray(extractedData.items)) {
             for (const item of extractedData.items) {
+              // Skip items with zero amount
+              if (item.amount === 0) continue;
+
               const unitPriceCents = Math.round(item.unitPrice * 100);
               const amountCents = Math.round(item.amount * 100);
 
