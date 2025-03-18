@@ -47,6 +47,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: errorMessage }, { status: 400 });
     }
 
+    // Check document type before processing
+    const documentType = formData.get('type');
+    if (documentType === 'invoice') {
+      try {
+        // First validate that this is likely an invoice document type
+        const isLikelyInvoice = await preliminaryDocumentTypeCheck(file);
+        if (!isLikelyInvoice) {
+          return NextResponse.json({
+            error: "This document appears to be an account statement or receipt, not an invoice.",
+            details: "Please upload a valid invoice document. Account statements, receipts, and other financial documents are not supported."
+          }, { status: 400 });
+        }
+      } catch (error) {
+        console.error("Document type check failed, proceeding with main validation:", error);
+        // Continue without failing - we'll rely on the main validation
+      }
+    }
+
     // Get filename from formData since Blob doesn't have name property
     const filename = (formData.get('file') as File).name;
     const fileBuffer = await file.arrayBuffer();
@@ -64,6 +82,15 @@ export async function POST(request: Request) {
         try {
           const extractedData = await extractInvoiceData(buffer);
           console.log('Successfully extracted invoice data');
+
+          // Validate that this is actually an invoice document
+          const isInvoice = validateIsInvoice(extractedData);
+          if (!isInvoice) {
+            return NextResponse.json({
+              error: "The uploaded document doesn't appear to be an invoice. Please upload a valid invoice document.",
+              details: "We couldn't find key invoice information such as invoice number, line items, or total amount."
+            }, { status: 400 });
+          }
 
           // Save invoice to database
           const now = new Date();
@@ -194,6 +221,10 @@ export async function POST(request: Request) {
 
           // Convert the extracted data to CSV format for sheet block
           const csvData = convertToCSV(extractedData);
+
+          // Log the CSV data for debugging
+          console.log("Generated CSV data for invoice:");
+          console.log(csvData);
 
           return NextResponse.json({
             url: `data:${file.type};base64,${buffer.toString('base64')}`,
@@ -519,52 +550,65 @@ async function extractInvoiceData(buffer: Buffer) {
     // For PDFs, use PDF.js extraction
     let extractedText = '';
     if (isPDF) {
-      // Add PDF.js for better PDF extraction
-      const pdfjs = require('pdfjs-dist');
-      // Set proper worker path for PDF.js
-      const pdfjsWorker = require('pdfjs-dist/build/pdf.worker.js');
-
-      if (typeof window === 'undefined') {
-        // In Node.js environment - fixed worker path configuration
-        pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+      // First try Gemini Vision if API key is available - if successful, skip PDF.js
+      if (extractionResults.length > 0 &&
+        extractionResults[0].method === 'gemini' &&
+        extractionResults[0].data.items &&
+        extractionResults[0].data.items.length > 0 &&
+        extractionResults[0].data.total > 0) {
+        console.log('Skipping PDF.js extraction as Gemini Vision was successful');
       } else {
-        // In browser environment
-        pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
-      }
+        // Only attempt PDF.js if Gemini wasn't successful
+        try {
+          const pdfjs = require('pdfjs-dist');
 
-      // Create a new promise to handle PDF extraction
-      const pdfData = await new Promise((resolve, reject) => {
-        // Create temporary Uint8Array from buffer
-        const data = new Uint8Array(buffer);
+          // Skip PDF.js in serverless environment to avoid worker issues
+          if (typeof window === 'undefined') {
+            console.log('Skipping PDF.js in server environment to avoid worker issues');
+            extractedText = ''; // Skip PDF.js in server environment
+          } else {
+            // Only use PDF.js in browser environment where worker is available
+            pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
-        // Use PDF.js to load and parse the document
-        pdfjs.getDocument(data).promise
-          .then(async (pdf: any) => {
-            let extractedText = '';
+            // Create a new promise to handle PDF extraction
+            const pdfData = await new Promise((resolve, reject) => {
+              // Create temporary Uint8Array from buffer
+              const data = new Uint8Array(buffer);
 
-            // Get total number of pages
-            const numPages = pdf.numPages;
+              // Use PDF.js to load and parse the document
+              pdfjs.getDocument(data).promise
+                .then(async (pdf: any) => {
+                  let extractedText = '';
 
-            // Extract text from each page
-            for (let i = 1; i <= numPages; i++) {
-              const page = await pdf.getPage(i);
-              const content = await page.getTextContent();
-              const strings = content.items.map((item: { str: string; }) => item.str);
-              extractedText += strings.join(' ') + '\n';
+                  // Get total number of pages
+                  const numPages = pdf.numPages;
+
+                  // Extract text from each page
+                  for (let i = 1; i <= numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const content = await page.getTextContent();
+                    const strings = content.items.map((item: { str: string; }) => item.str);
+                    extractedText += strings.join(' ') + '\n';
+                  }
+
+                  resolve(extractedText);
+                })
+                .catch((error: Error) => {
+                  console.error('PDF.js extraction failed:', error);
+                  resolve(''); // Resolve with empty string to allow fallback methods
+                });
+            });
+
+            // Check if we got text from PDF.js
+            if (pdfData && typeof pdfData === 'string' && pdfData.length > 100) {
+              console.log(`Extracted ${pdfData.length} characters using PDF.js`);
+              extractedText = pdfData;
             }
-
-            resolve(extractedText);
-          })
-          .catch((error: Error) => {
-            console.error('PDF.js extraction failed:', error);
-            resolve(''); // Resolve with empty string to allow fallback methods
-          });
-      });
-
-      // Check if we got text from PDF.js
-      if (pdfData && typeof pdfData === 'string' && pdfData.length > 100) {
-        console.log(`Extracted ${pdfData.length} characters using PDF.js`);
-        extractedText = pdfData;
+          }
+        } catch (error) {
+          console.error('Error extracting PDF with PDF.js:', error);
+          extractedText = ''; // Fallback to OCR
+        }
       }
     }
 
@@ -1288,4 +1332,114 @@ function convertToCSV(data: any) {
 
   // Convert to CSV
   return allRows.map(row => row.join(',')).join('\n');
+}
+
+// New validation function to determine if a document is an invoice
+function validateIsInvoice(extractedData: any): boolean {
+  // Check for key invoice characteristics
+
+  // An invoice should have an invoice number
+  const hasInvoiceNumber = extractedData.invoiceNumber &&
+    extractedData.invoiceNumber !== 'Unknown' &&
+    extractedData.invoiceNumber.length > 0;
+
+  // An invoice should have at least one line item with actual data
+  const hasLineItems = extractedData.items &&
+    Array.isArray(extractedData.items) &&
+    extractedData.items.length > 0 &&
+    !extractedData.items[0].description.includes('Unable to extract') &&
+    !extractedData.items[0].description.includes('not detected');
+
+  // An invoice should have a total amount
+  const hasTotal = typeof extractedData.total === 'number' && extractedData.total > 0;
+
+  // An invoice typically has vendor and customer information
+  const hasVendorInfo = extractedData.vendor &&
+    extractedData.vendor !== 'Unknown Vendor' &&
+    extractedData.vendor.length > 0;
+
+  // Check for keywords that indicate account statements
+  const isLikelyStatement = typeof extractedData.vendor === 'string' && (
+    /bank\s+statement/i.test(extractedData.vendor) ||
+    /account\s+statement/i.test(extractedData.vendor) ||
+    /credit\s+card/i.test(extractedData.vendor)
+  );
+
+  // If any statement indicators are present, it's likely not an invoice
+  if (isLikelyStatement) {
+    return false;
+  }
+
+  // Check if at least some key invoice features are present
+  // We require at least invoice number or line items, plus a total amount
+  return (hasInvoiceNumber || hasLineItems) && hasTotal && hasVendorInfo;
+}
+
+// New function to perform preliminary document type check
+async function preliminaryDocumentTypeCheck(file: Blob): Promise<boolean> {
+  // Extract a small sample of text to check document type
+  try {
+    const fileBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(fileBuffer);
+
+    // For PDFs, just use Gemini Vision for checking as it works reliably
+    if (file.type === 'application/pdf') {
+      try {
+        // Gemini Vision check if available
+        if (process.env.GEMINI_API_KEY) {
+          try {
+            // Use Gemini API to check document type
+            const geminiData = await processWithGeminiVision(buffer, 'application/pdf');
+
+            // More comprehensive check for statement indicators in the data
+            const isLikelyStatement =
+              // Check vendor name for statement words
+              (
+                /statement/i.test(geminiData.vendor || '') ||
+                /account/i.test(geminiData.vendor || '') ||
+                /bank/i.test(geminiData.vendor || '') ||
+                /credit\s+card/i.test(geminiData.vendor || '')
+              ) ||
+              // Check for typical statement features
+              (
+                (!geminiData.invoiceNumber || geminiData.invoiceNumber === 'Unknown') &&
+                (!geminiData.items || geminiData.items.length === 0 || geminiData.items[0].description.includes('Unable to extract')) &&
+                (geminiData.total === 0 || !geminiData.total)
+              );
+
+            if (isLikelyStatement) {
+              console.log('Document appears to be a statement rather than an invoice');
+              return false;
+            }
+
+            // If we have invoice data with valid items, it's likely an invoice
+            if (geminiData.items &&
+              geminiData.items.length > 0 &&
+              !geminiData.items[0].description.includes('Unable to extract') &&
+              geminiData.total > 0) {
+              console.log('Document appears to be a valid invoice');
+              return true;
+            }
+          } catch (error) {
+            console.error('Gemini preliminary check failed:', error);
+            // Continue with simplified checking
+          }
+        }
+
+        console.log('Skipping PDF text extraction check due to configuration issues');
+        return true; // Default to allowing - we'll rely on the main validation
+
+      } catch (error) {
+        console.error('Error in preliminary document check:', error);
+        // If we can't determine, we'll rely on the main validation
+        return true;
+      }
+    }
+
+    // For non-PDFs, we can't easily check
+    return true;
+  } catch (error) {
+    console.error('Error checking document type:', error);
+    return true; // Default to allowing if we can't check
+  }
 }

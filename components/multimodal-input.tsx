@@ -120,29 +120,84 @@ function PureMultimodalInput({
   const submitForm = useCallback(() => {
     window.history.replaceState({}, '', `/chat/${chatId}`);
 
-    handleSubmit(undefined, {
-      experimental_attachments: attachments,
-    });
+    // Store current input value before clearing it
+    const currentInput = input;
 
-    setAttachments([]);
+    // Immediately clear the input and local storage
+    setInput('');
     setLocalStorageInput('');
     resetHeight();
 
-    if (width && width > 768) {
-      textareaRef.current?.focus();
-    }
+    // Process any pending file uploads with the saved input text
+    const processUploads = async () => {
+      if (uploadQueue.length > 0) {
+        try {
+          const fileList = fileInputRef.current?.files;
+          if (fileList) {
+            const files = Array.from(fileList);
+            const uploadPromises = files.map(file => uploadFile(file, currentInput));
+            const uploadedAttachments = await Promise.all(uploadPromises);
+            const successfullyUploadedAttachments = uploadedAttachments.filter(
+              (attachment) => attachment !== undefined,
+            );
+
+            // Submit with the uploaded attachments
+            handleSubmit(undefined, {
+              experimental_attachments: successfullyUploadedAttachments,
+            });
+          }
+        } catch (error) {
+          console.error('Error uploading files!', error);
+          toast.error('Failed to upload file, please try again!');
+          return;
+        } finally {
+          setUploadQueue([]);
+          setAttachments([]);
+        }
+      } else {
+        // If no uploads, just submit with existing attachments
+        handleSubmit(undefined, {
+          experimental_attachments: attachments,
+        });
+        setAttachments([]);
+      }
+
+      if (width && width > 768) {
+        textareaRef.current?.focus();
+      }
+    };
+
+    processUploads();
   }, [
     attachments,
     handleSubmit,
     setAttachments,
+    setInput,
     setLocalStorageInput,
     width,
     chatId,
+    uploadQueue,
+    input,
   ]);
 
-  const uploadFile = async (file: File) => {
+  const uploadFile = async (file: File, userInput: string) => {
+    // Check file size - roughly estimate tokens based on size
+    // A rough estimate: 1 MB can be around 250K-750K tokens depending on content type
+    const MAX_FILE_SIZE_MB = 5; // Limit to 5MB
+    const fileSizeInMB = file.size / (1024 * 1024);
+
+    if (fileSizeInMB > MAX_FILE_SIZE_MB) {
+      toast.error(`File ${file.name} is too large (${fileSizeInMB.toFixed(1)}MB). Maximum size is ${MAX_FILE_SIZE_MB}MB to prevent context overflow.`);
+      return undefined;
+    }
+
     const formData = new FormData();
     formData.append('file', file);
+
+    // Check if user message indicates this is an invoice
+    if (userInput && /process\s+this\s+invoice|extract\s+invoice|analyze\s+invoice|read\s+invoice/i.test(userInput)) {
+      formData.append('type', 'invoice');
+    }
 
     try {
       const response = await fetch('/api/files/upload', {
@@ -153,6 +208,46 @@ function PureMultimodalInput({
       if (response.ok) {
         const data = await response.json();
         const { url, pathname, contentType } = data;
+
+        // If this is invoice data and contains processed results, store in sessionStorage
+        if (data.isInvoice && data.csvData) {
+          const storageKey = `file-data-${Date.now()}`;
+          sessionStorage.setItem(storageKey, JSON.stringify({
+            csvData: data.csvData,
+            extractedData: data.extractedData,
+            fileName: file.name,
+            contentType
+          }));
+
+          // Return a reference to the data in sessionStorage instead of the raw data
+          return {
+            url: `sessionStorage://${storageKey}`,
+            name: pathname,
+            contentType: contentType,
+            isStorageReference: true
+          };
+        }
+
+        // For large files of other types, also consider storing in sessionStorage
+        // to avoid token overflow if file size is over 1MB
+        if (fileSizeInMB > 1) {
+          const storageKey = `file-data-${Date.now()}`;
+          sessionStorage.setItem(storageKey, JSON.stringify({
+            url,
+            name: pathname,
+            contentType,
+            fileName: file.name,
+            sizeInMB: fileSizeInMB.toFixed(1)
+          }));
+
+          // Return a reference that includes size info for the UI
+          return {
+            url: `sessionStorage://${storageKey}`,
+            name: `${pathname} (${fileSizeInMB.toFixed(1)}MB - stored locally)`,
+            contentType: contentType,
+            isStorageReference: true
+          };
+        }
 
         return {
           url,
@@ -171,26 +266,31 @@ function PureMultimodalInput({
     async (event: ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(event.target.files || []);
 
+      if (files.length === 0) return;
+
+      // Check total size of all files
+      const totalSizeMB = files.reduce((total, file) => total + file.size / (1024 * 1024), 0);
+      const MAX_TOTAL_SIZE_MB = 10; // Max 10MB total
+
+      if (totalSizeMB > MAX_TOTAL_SIZE_MB) {
+        toast.error(`Total file size (${totalSizeMB.toFixed(1)}MB) exceeds the ${MAX_TOTAL_SIZE_MB}MB limit. Please reduce file sizes to prevent context overflow.`);
+        return;
+      }
+
+      // Check number of files
+      const MAX_FILES = 3;
+      if (files.length > MAX_FILES) {
+        toast.error(`You can upload a maximum of ${MAX_FILES} files at once to prevent context overflow.`);
+        return;
+      }
+
+      // Just queue the files for preview but don't upload yet
       setUploadQueue(files.map((file) => file.name));
 
-      try {
-        const uploadPromises = files.map((file) => uploadFile(file));
-        const uploadedAttachments = await Promise.all(uploadPromises);
-        const successfullyUploadedAttachments = uploadedAttachments.filter(
-          (attachment) => attachment !== undefined,
-        );
-
-        setAttachments((currentAttachments) => [
-          ...currentAttachments,
-          ...successfullyUploadedAttachments,
-        ]);
-      } catch (error) {
-        console.error('Error uploading files!', error);
-      } finally {
-        setUploadQueue([]);
-      }
+      // Focus the textarea so the user can type instructions
+      textareaRef.current?.focus();
     },
-    [setAttachments],
+    [],
   );
 
   return (
@@ -347,7 +447,8 @@ function PureSendButton({
         event.preventDefault();
         submitForm();
       }}
-      disabled={input.length === 0 || uploadQueue.length > 0}
+      // Enable button if there's text OR files queued for upload
+      disabled={input.length === 0 && uploadQueue.length === 0}
     >
       <ArrowUpIcon size={14} />
     </Button>

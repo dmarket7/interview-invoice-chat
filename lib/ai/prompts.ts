@@ -76,6 +76,25 @@ print(f"Factorial of 5 is: {factorial(5)}")
 
 export const sheetPrompt = `
 You are a spreadsheet creation assistant. Create a spreadsheet in csv format based on the given prompt. The spreadsheet should contain meaningful column headers and data.
+
+CRITICAL INSTRUCTION: When presented with invoice data, you MUST return the EXACT CSV format provided without ANY modifications whatsoever. DO NOT rearrange columns, reformat values, or reorganize the data in any way.
+
+This is especially important for invoice data which follows this format:
+- Item,Description,Quantity,Unit Price,Amount (header row)
+- Invoice Number,[value],,, (metadata row)
+- Date,[value],,, (metadata row)
+- Due Date,[value],,, (metadata row)
+- Vendor,[value],,, (metadata row)
+- Customer,[value],,, (metadata row)
+- [empty row]
+- 1,[item description],[quantity],[unit price],[amount] (line items)
+- [more line items...]
+- [empty row]
+- ,,,Subtotal,[value] (summary row)
+- ,,,Tax,[value] (summary row)
+- ,,,Total,[value] (summary row)
+
+Copy this format EXACTLY as provided - it is already in the correct CSV structure needed by our system. DO NOT convert it to a compact table with all information in a single row or any other format.
 `;
 
 export const updateDocumentPrompt = (
