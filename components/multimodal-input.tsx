@@ -212,19 +212,66 @@ function PureMultimodalInput({
         // If this is invoice data and contains processed results, store in sessionStorage
         if (data.isInvoice && data.csvData) {
           const storageKey = `file-data-${Date.now()}`;
+
+          // Store document ID if it was created during upload
+          let documentId = data.documentId;
+
+          // If no document was created during upload, create one now
+          if (!documentId && data.csvData) {
+            try {
+              const sheetResponse = await fetch('/api/create-sheet', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  csvData: data.csvData,
+                  fileName: file.name
+                }),
+              });
+
+              if (sheetResponse.ok) {
+                const sheetData = await sheetResponse.json();
+                documentId = sheetData.documentId;
+              }
+            } catch (error) {
+              console.error('Error creating sheet document:', error);
+              // Continue without failing - we'll still have the raw data
+            }
+          }
+
           sessionStorage.setItem(storageKey, JSON.stringify({
             csvData: data.csvData,
             extractedData: data.extractedData,
             fileName: file.name,
-            contentType
+            contentType,
+            documentId,
+            documentTitle: data.documentTitle || `Invoice: ${file.name}`
           }));
+
+          // If document ID is available, store it in sessionStorage for later use
+          if (documentId) {
+            sessionStorage.setItem('last-invoice-document-id', documentId);
+
+            // Display a notification that sheet is available
+            toast.success('Invoice data extracted and sheet view created', {
+              action: {
+                label: 'View Sheet',
+                onClick: () => {
+                  window.open(`/?documentId=${documentId}`, '_blank');
+                }
+              },
+              duration: 5000
+            });
+          }
 
           // Return a reference to the data in sessionStorage instead of the raw data
           return {
             url: `sessionStorage://${storageKey}`,
             name: pathname,
             contentType: contentType,
-            isStorageReference: true
+            isStorageReference: true,
+            documentId: documentId // Include document ID in attachment for potential use
           };
         }
 

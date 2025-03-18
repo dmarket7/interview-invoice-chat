@@ -13,7 +13,7 @@ import { Block } from './block';
 import { MultimodalInput } from './multimodal-input';
 import { Messages } from './messages';
 import type { VisibilityType } from './visibility-selector';
-import { useBlockSelector } from '@/hooks/use-block';
+import { useBlockSelector, useBlock } from '@/hooks/use-block';
 import { toast } from 'sonner';
 
 export function Chat({
@@ -21,13 +21,16 @@ export function Chat({
   initialMessages,
   selectedChatModel,
   selectedVisibilityType,
+  initialDocumentId
 }: {
   id: string;
   initialMessages: Array<Message>;
   selectedChatModel: string;
   selectedVisibilityType: VisibilityType;
+  initialDocumentId?: string;
 }) {
   const { mutate } = useSWRConfig();
+  const { setBlock } = useBlock();
 
   const {
     messages,
@@ -49,6 +52,35 @@ export function Chat({
     onFinish: () => {
       mutate('/api/history');
     },
+    onResponse: (response) => {
+      // Check for invoice document ID after response
+      const lastInvoiceDocumentId = sessionStorage.getItem('last-invoice-document-id');
+      if (lastInvoiceDocumentId) {
+        // After processing an invoice, initialize the sheet block if not already visible
+        setBlock((currentBlock: any) => {
+          // Only set if not already visible or has a different document ID
+          if (!currentBlock.isVisible || currentBlock.documentId !== lastInvoiceDocumentId) {
+            return {
+              documentId: lastInvoiceDocumentId,
+              title: 'Invoice Data',
+              kind: 'sheet',
+              content: '',
+              isVisible: true,
+              status: 'idle',
+              boundingBox: {
+                top: 100,
+                left: 100,
+                width: 800,
+                height: 600
+              }
+            };
+          }
+          return currentBlock;
+        });
+        // Clear the storage to prevent showing on future responses
+        sessionStorage.removeItem('last-invoice-document-id');
+      }
+    },
     onError: (error) => {
       toast.error('An error occured, please try again!');
     },
@@ -61,6 +93,9 @@ export function Chat({
 
   const [attachments, setAttachments] = useState<Array<Attachment>>([]);
   const isBlockVisible = useBlockSelector((state) => state.isVisible);
+  const [voteStatus, setVoteStatus] = useState<
+    Record<string, 'up' | 'down' | null>
+  >({});
 
   return (
     <>
