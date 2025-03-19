@@ -16,7 +16,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { toast } from 'sonner';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from './ui/collapsible';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 // Define types for invoice and line item based on the database schema
 type Invoice = {
@@ -50,6 +50,8 @@ export function InvoiceTable() {
   } | null>(null);
   const [openInvoices, setOpenInvoices] = useState<Record<string, boolean>>({});
   const [allExpanded, setAllExpanded] = useState(false);
+  const [sortField, setSortField] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   // Load invoices and line items
   useEffect(() => {
@@ -257,6 +259,57 @@ export function InvoiceTable() {
     setOpenInvoices(newOpenState);
   };
 
+  // Handle sorting
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      // Toggle direction if the same field is clicked
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      // Set new sort field and default to ascending
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  // Get sorted invoices
+  const getSortedInvoices = () => {
+    if (!sortField) return invoices;
+
+    return [...invoices].sort((a, b) => {
+      const direction = sortDirection === 'asc' ? 1 : -1;
+
+      switch (sortField) {
+        case 'vendorName':
+          return (a.vendorName.localeCompare(b.vendorName)) * direction;
+        case 'invoiceDate':
+          const dateA = a.invoiceDate ? new Date(a.invoiceDate).getTime() : 0;
+          const dateB = b.invoiceDate ? new Date(b.invoiceDate).getTime() : 0;
+          return (dateA - dateB) * direction;
+        case 'dueDate':
+          const dueDateA = a.dueDate ? new Date(a.dueDate).getTime() : 0;
+          const dueDateB = b.dueDate ? new Date(b.dueDate).getTime() : 0;
+          return (dueDateA - dueDateB) * direction;
+        case 'amount':
+          const amountA = a.amount || 0;
+          const amountB = b.amount || 0;
+          return (amountA - amountB) * direction;
+        default:
+          return 0;
+      }
+    });
+  };
+
+  // Render sort indicator
+  const renderSortIndicator = (field: string) => {
+    if (sortField !== field) {
+      return <ArrowUpDown size={16} className="ml-1 opacity-50" />;
+    }
+
+    return sortDirection === 'asc'
+      ? <ArrowUp size={16} className="ml-1" />
+      : <ArrowDown size={16} className="ml-1" />;
+  };
+
   if (loading) {
     return <div className="p-4">Loading invoices...</div>;
   }
@@ -295,15 +348,47 @@ export function InvoiceTable() {
             <TableRow>
               <TableHead className="w-10"></TableHead>
               <TableHead className="min-w-[120px]">Customer</TableHead>
-              <TableHead className="min-w-[120px]">Vendor</TableHead>
+              <TableHead
+                className="min-w-[120px] cursor-pointer"
+                onClick={() => handleSort('vendorName')}
+              >
+                <div className="flex items-center">
+                  Vendor
+                  {renderSortIndicator('vendorName')}
+                </div>
+              </TableHead>
               <TableHead className="min-w-[100px]">Invoice #</TableHead>
-              <TableHead className="min-w-[100px]">Invoice Date</TableHead>
-              <TableHead className="min-w-[100px]">Due Date</TableHead>
-              <TableHead className="min-w-[120px]">Total Amount</TableHead>
+              <TableHead
+                className="min-w-[100px] cursor-pointer"
+                onClick={() => handleSort('invoiceDate')}
+              >
+                <div className="flex items-center">
+                  Invoice Date
+                  {renderSortIndicator('invoiceDate')}
+                </div>
+              </TableHead>
+              <TableHead
+                className="min-w-[100px] cursor-pointer"
+                onClick={() => handleSort('dueDate')}
+              >
+                <div className="flex items-center">
+                  Due Date
+                  {renderSortIndicator('dueDate')}
+                </div>
+              </TableHead>
+              <TableHead
+                className="min-w-[120px] cursor-pointer"
+                onClick={() => handleSort('amount')}
+              >
+                <div className="flex items-center">
+                  Total Amount
+                  {renderSortIndicator('amount')}
+                </div>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {invoices.map((invoice) => (
+            {getSortedInvoices().map((invoice) => (
               <React.Fragment key={invoice.id}>
                 <TableRow
                   className={`cursor-pointer ${openInvoices[invoice.id] ? 'bg-gray-50 border-b-0' : 'hover:bg-gray-50'}`}
