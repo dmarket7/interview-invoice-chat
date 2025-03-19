@@ -5,6 +5,9 @@ import { Button } from './ui/button';
 import { FileIcon, UploadIcon } from './icons';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
+import { ChevronDown, ChevronUp } from 'lucide-react';
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
+
 
 export function InvoiceUpload() {
   const [isUploading, setIsUploading] = useState(false);
@@ -109,46 +112,57 @@ export function InvoiceUpload() {
   };
 
   return (
-    <div className="border rounded-lg p-6">
+    <div className="border rounded-xl">
       <div className="flex flex-col gap-4">
-        <h2 className="text-lg font-medium">Upload Invoice</h2>
-        <p className="text-muted-foreground text-sm">
-          Upload a PDF invoice to automatically extract data.
-        </p>
+        <Collapsible className="data-[state=closed]:hover:bg-secondary/50">
+          <CollapsibleTrigger className="flex items-center justify-between w-full h-12 px-4">
+            <h2 className="text-lg font-medium">Upload Invoice</h2>
+            <ChevronDown size={16} />
+          </CollapsibleTrigger>
+          <CollapsibleContent className="p-4">
+            <>
+              <p className="text-muted-foreground text-sm">
+                Upload a PDF invoice to automatically extract data.
+              </p>
 
-        <div className="flex flex-col gap-4">
-          <label
-            htmlFor="invoice-upload"
-            className="border border-dashed rounded-lg p-8 flex flex-col items-center justify-center gap-2 cursor-pointer hover:bg-muted transition-colors"
-          >
-            <FileIcon size={32} />
-            <p className="text-sm text-muted-foreground">
-              {file ? file.name : 'PDF Invoice (Max 10MB)'}
-            </p>
-            <input
-              id="invoice-upload"
-              type="file"
-              accept="application/pdf"
-              onChange={handleFileChange}
-              className="hidden"
-            />
-          </label>
+              <div className="flex flex-col gap-4">
+                <label
+                  htmlFor="invoice-upload"
+                  className="border border-dashed rounded-lg p-8 flex flex-col items-center justify-center gap-2 cursor-pointer hover:bg-muted transition-colors"
+                >
+                  <FileIcon size={32} />
+                  <p className="text-sm text-muted-foreground">
+                    {file ? file.name : 'PDF Invoice (Max 10MB)'}
+                  </p>
+                  <input
+                    id="invoice-upload"
+                    type="file"
+                    accept="application/pdf"
+                    onChange={handleFileChange}
+                    className="hidden"
+                  />
+                </label>
 
-          <Button
-            onClick={handleUpload}
-            disabled={!file || isUploading}
-            className="w-full"
-          >
-            {isUploading ? (
-              'Processing...'
-            ) : (
-              <>
-                <UploadIcon size={16} />
-                <span className="ml-2">Upload Invoice</span>
-              </>
-            )}
-          </Button>
-        </div>
+                <Button
+                  onClick={handleUpload}
+                  disabled={!file || isUploading}
+                  className="w-full"
+                >
+                  {isUploading ? (
+                    'Processing...'
+                  ) : (
+                    <>
+                      <UploadIcon size={16} />
+                      <span className="ml-2">Upload Invoice</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+            </>
+          </CollapsibleContent>
+        </Collapsible>
+
+
       </div>
     </div>
   );

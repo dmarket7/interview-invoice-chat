@@ -60,7 +60,7 @@ export function AppSidebar({ user }: { user: User | undefined; }) {
       </SidebarHeader>
       <SidebarContent>
         {user && (
-          <div className="mb-4 px-4">
+          <div className="my-6 px-4">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -68,7 +68,7 @@ export function AppSidebar({ user }: { user: User | undefined; }) {
                   className="w-full justify-start"
                   onClick={() => {
                     setOpenMobile(false);
-                    router.push('/invoice');
+                    router.push('/invoices');
                   }}
                 >
                   <FileIcon size={16} />
