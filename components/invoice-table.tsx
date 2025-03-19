@@ -175,6 +175,11 @@ export function InvoiceTable() {
       if (!response.ok) throw new Error('Failed to save changes');
 
       toast.success('Changes saved successfully');
+      // Collapse the row after saving
+      setOpenInvoices(prev => ({
+        ...prev,
+        [invoiceId]: false
+      }));
     } catch (error) {
       console.error('Error saving invoice:', error);
       toast.error('Failed to save changes');
@@ -295,7 +300,6 @@ export function InvoiceTable() {
               <TableHead className="min-w-[100px]">Invoice Date</TableHead>
               <TableHead className="min-w-[100px]">Due Date</TableHead>
               <TableHead className="min-w-[120px]">Total Amount</TableHead>
-              <TableHead className="w-[80px]">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -316,23 +320,24 @@ export function InvoiceTable() {
                   <TableCell>{formatDate(invoice.invoiceDate)}</TableCell>
                   <TableCell>{formatDate(invoice.dueDate)}</TableCell>
                   <TableCell className="font-medium">{formatCurrency(invoice.amount)}</TableCell>
-                  <TableCell>
-                    <Button
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation(); // Prevent row toggle
-                        saveChanges(invoice.id);
-                      }}
-                      disabled={saving}
-                    >
-                      {saving ? 'Saving...' : 'Save'}
-                    </Button>
-                  </TableCell>
                 </TableRow>
                 {openInvoices[invoice.id] && (
                   <TableRow key={`details-${invoice.id}`}>
-                    <TableCell colSpan={8} className="p-0">
+                    <TableCell colSpan={7} className="p-0">
                       <div className="p-4 bg-gray-50 border-t-0 border-x border-b rounded-b-md shadow-inner">
+                        <div className="flex justify-between items-start mb-4">
+                          <h3 className="text-lg font-semibold">Invoice Details</h3>
+                          <Button
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation(); // Prevent row toggle
+                              saveChanges(invoice.id);
+                            }}
+                            disabled={saving}
+                          >
+                            {saving ? 'Saving...' : 'Save Changes'}
+                          </Button>
+                        </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
                           <div>
                             <div className="text-sm font-medium mb-1">Customer</div>
