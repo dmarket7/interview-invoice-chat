@@ -57,46 +57,7 @@ export function InvoiceUpload() {
           csvData: data.csvData,
           invoiceData: data.extractedData,
           fileName: file.name,
-          documentId: data.documentId,
-          documentTitle: data.documentTitle
         }));
-
-        // Check if we have a document ID from the upload process
-        if (data.documentId) {
-          // Navigate to the new chat page with document ID to display the sheet block
-          toast.success('Invoice data extracted successfully');
-          router.push(`/?documentId=${data.documentId}`);
-        } else {
-          // If document creation failed in the upload process, try to create it here
-          try {
-            const sheetResponse = await fetch('/api/create-sheet', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                csvData: data.csvData,
-                fileName: file.name
-              }),
-            });
-
-            if (sheetResponse.ok) {
-              const sheetData = await sheetResponse.json();
-              // Navigate to the new chat page with document ID to display the sheet block
-              toast.success('Invoice data extracted successfully');
-              router.push(`/?documentId=${sheetData.documentId}`);
-            } else {
-              // If sheet creation fails, still navigate but without sheet block
-              toast.warning('Invoice uploaded but sheet view could not be created');
-              router.push(`/?upload=invoice`);
-            }
-          } catch (sheetError) {
-            console.error('Error creating sheet document:', sheetError);
-            // Still navigate even if sheet creation fails
-            toast.warning('Invoice uploaded but sheet view could not be created');
-            router.push(`/?upload=invoice`);
-          }
-        }
 
         // Clear the file after successful upload
         setFile(null);

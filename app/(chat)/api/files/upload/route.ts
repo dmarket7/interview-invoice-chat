@@ -246,36 +246,6 @@ export async function POST(request: Request) {
           console.log("Generated CSV data for invoice:");
           console.log(csvData);
 
-          // Create a document for the sheet block with the CSV data
-          const documentId = nanoid();
-          const documentTitle = `Invoice: ${extractedData.invoiceNumber} - ${extractedData.vendor}`;
-
-          try {
-            // Create a document with the CSV data that can be viewed in a sheet block
-            if (session.user?.id) {
-              // Get the base URL from headers or environment
-              const protocol = request.headers.get('x-forwarded-proto') || 'http';
-              const host = request.headers.get('host') || 'localhost:3000';
-              const baseUrl = `${protocol}://${host}`;
-
-              await fetch(`${baseUrl}/api/document?id=${documentId}`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                  content: csvData,
-                  title: documentTitle,
-                  kind: 'sheet',
-                }),
-              });
-              console.log(`Created document with ID: ${documentId} for invoice sheet view`);
-            }
-          } catch (documentError) {
-            console.error('Error creating document for invoice:', documentError);
-            // Continue without failing - the primary invoice data is already saved
-          }
-
           return NextResponse.json({
             url: `data:${file.type};base64,${buffer.toString('base64')}`,
             pathname: `/uploads/${uniqueFilename}`,
@@ -285,8 +255,6 @@ export async function POST(request: Request) {
             extractedData,
             extractionMethods: extractedData.extractionMethods || ['regex'],
             invoiceId,
-            documentId,
-            documentTitle
           });
         } catch (invoiceError: any) {
           console.error('Invoice processing error:', invoiceError);

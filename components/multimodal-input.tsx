@@ -212,61 +212,53 @@ function PureMultimodalInput({
         const data = await response.json();
         const { url, pathname, contentType } = data;
 
+        // NEW CODE: Store the original filename for agent reference
+        // This helps the agent reference the file by its original name
+        const originalFilename = file.name;
+        const fileReference = `${originalFilename}|${Date.now()}`;
+
+        // Store a mapping of filename to data key in sessionStorage
+        // This allows the agent to reference the file by name
+        try {
+          const fileMapKey = 'uploaded-file-map';
+          let fileMap: Record<string, {
+            storageKey: string;
+            timestamp: number;
+            type: string;
+            isInvoice: boolean;
+          }> = {};
+          const existingMap = sessionStorage.getItem(fileMapKey);
+
+          if (existingMap) {
+            fileMap = JSON.parse(existingMap);
+          }
+
+          // Map the original filename to the storage key or document ID
+          fileMap[originalFilename] = {
+            storageKey: data.isInvoice ? data.documentId : pathname,
+            timestamp: Date.now(),
+            type: contentType,
+            isInvoice: data.isInvoice || false
+          };
+
+          // Save the updated map
+          sessionStorage.setItem(fileMapKey, JSON.stringify(fileMap));
+        } catch (mapError) {
+          // Continue even if mapping fails - worst case the agent won't find the file by name
+          console.error('Error storing file reference map:', mapError);
+        }
+
         // If this is invoice data and contains processed results, store in sessionStorage
         if (data.isInvoice && data.csvData) {
           const storageKey = `file-data-${Date.now()}`;
-
-          // Store document ID if it was created during upload
-          let documentId = data.documentId;
-
-          // If no document was created during upload, create one now
-          if (!documentId && data.csvData) {
-            try {
-              const sheetResponse = await fetch('/api/create-sheet', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                  csvData: data.csvData,
-                  fileName: file.name
-                }),
-              });
-
-              if (sheetResponse.ok) {
-                const sheetData = await sheetResponse.json();
-                documentId = sheetData.documentId;
-              }
-            } catch (error) {
-              console.error('Error creating sheet document:', error);
-              // Continue without failing - we'll still have the raw data
-            }
-          }
 
           sessionStorage.setItem(storageKey, JSON.stringify({
             csvData: data.csvData,
             extractedData: data.extractedData,
             fileName: file.name,
             contentType,
-            documentId,
             documentTitle: data.documentTitle || `Invoice: ${file.name}`
           }));
-
-          // If document ID is available, store it in sessionStorage for later use
-          if (documentId) {
-            sessionStorage.setItem('last-invoice-document-id', documentId);
-
-            // Display a notification that sheet is available
-            toast.success('Invoice data extracted and sheet view created', {
-              action: {
-                label: 'View Sheet',
-                onClick: () => {
-                  window.open(`/?documentId=${documentId}`, '_blank');
-                }
-              },
-              duration: 5000
-            });
-          }
 
           // Return a reference to the data in sessionStorage instead of the raw data
           return {
@@ -274,7 +266,6 @@ function PureMultimodalInput({
             name: pathname,
             contentType: contentType,
             isStorageReference: true,
-            documentId: documentId // Include document ID in attachment for potential use
           };
         }
         if (userIsAskingToSubmitInvoice && data.isStatement) {
