@@ -4,23 +4,28 @@ import { Chat } from '@/components/chat';
 import { DEFAULT_CHAT_MODEL } from '@/lib/ai/models';
 import { generateUUID } from '@/lib/utils';
 import { DataStreamHandler } from '@/components/data-stream-handler';
-import { DocumentDataHandler } from '@/components/document-data-handler';
 
-export default async function Page({
-  searchParams,
-}: {
-  searchParams: { invoiceId?: string; documentId?: string; upload?: string; };
-}) {
-  const resolvedSearchParams = await searchParams;
-  const id = resolvedSearchParams?.invoiceId || generateUUID();
-  const documentId = resolvedSearchParams?.documentId;
-  const isUpload = resolvedSearchParams?.upload === 'invoice';
+export default async function Page() {
+  const id = generateUUID();
 
   const cookieStore = await cookies();
   const modelIdFromCookie = cookieStore.get('chat-model');
 
-  // Initialize with a default chat model if none is found in cookies
-  const selectedModel = modelIdFromCookie ? modelIdFromCookie.value : DEFAULT_CHAT_MODEL;
+  if (!modelIdFromCookie) {
+    return (
+      <>
+        <Chat
+          key={id}
+          id={id}
+          initialMessages={[]}
+          selectedChatModel={DEFAULT_CHAT_MODEL}
+          selectedVisibilityType="private"
+          isReadonly={false}
+        />
+        <DataStreamHandler id={id} />
+      </>
+    );
+  }
 
   return (
     <>
@@ -28,12 +33,11 @@ export default async function Page({
         key={id}
         id={id}
         initialMessages={[]}
-        selectedChatModel={selectedModel}
+        selectedChatModel={modelIdFromCookie.value}
         selectedVisibilityType="private"
-        initialDocumentId={documentId}
+        isReadonly={false}
       />
       <DataStreamHandler id={id} />
-      {documentId && <DocumentDataHandler documentId={documentId} />}
     </>
   );
 }
