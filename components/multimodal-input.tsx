@@ -66,6 +66,7 @@ function PureMultimodalInput({
   className?: string;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const { width } = useWindowSize();
 
   useEffect(() => {
@@ -201,6 +202,7 @@ function PureMultimodalInput({
     }
 
     try {
+      setIsUploading(true);
       const response = await fetch('/api/files/upload', {
         method: 'POST',
         body: formData,
@@ -332,6 +334,8 @@ function PureMultimodalInput({
       }
     } catch (error) {
       toast.error('Failed to upload file, please try again!');
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -381,6 +385,7 @@ function PureMultimodalInput({
         multiple
         onChange={handleFileChange}
         tabIndex={-1}
+        disabled={isUploading}
       />
 
       {(attachments.length > 0 || uploadQueue.length > 0) && (
@@ -397,7 +402,7 @@ function PureMultimodalInput({
                 name: filename,
                 contentType: '',
               }}
-              isUploading={true}
+              isUploading={isUploading}
             />
           ))}
         </div>
