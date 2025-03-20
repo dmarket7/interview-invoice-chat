@@ -195,7 +195,7 @@ function PureMultimodalInput({
     formData.append('file', file);
 
     // Check if user message indicates this is an invoice
-    const userIsAskingToSubmitInvoice = userInput && /process\s+this\s+invoice|extract\s+invoice|analyze\s+invoice|read\s+invoice/i.test(userInput);
+    const userIsAskingToSubmitInvoice = userInput && /(?=.*\binvoice\b)|(?=.*\b(process|scan|extract)\b)/i.test(userInput);
     if (userIsAskingToSubmitInvoice) {
       formData.append('type', 'invoice');
     }
