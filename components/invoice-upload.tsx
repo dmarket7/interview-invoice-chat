@@ -4,15 +4,13 @@ import { useState } from 'react';
 import { Button } from './ui/button';
 import { FileIcon, UploadIcon } from './icons';
 import { toast } from 'sonner';
-import { useRouter } from 'next/navigation';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 
 
 export function InvoiceUpload() {
   const [isUploading, setIsUploading] = useState(false);
   const [file, setFile] = useState<File | null>(null);
-  const router = useRouter();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -62,7 +60,7 @@ export function InvoiceUpload() {
         // Clear the file after successful upload
         setFile(null);
       } else {
-        toast.error('Failed to extract invoice data');
+        toast.error(data.message);
       }
     } catch (error) {
       console.error('Error uploading invoice:', error);
