@@ -54,10 +54,25 @@ export async function POST(request: Request) {
         // First validate that this is likely an invoice document type
         const isLikelyInvoice = await preliminaryDocumentTypeCheck(file);
         if (!isLikelyInvoice) {
+          // Convert file to buffer for response
+          const fileBuffer = await file.arrayBuffer();
+          const buffer = Buffer.from(fileBuffer);
+
+          // Get filename safely
+          const filename = formData.get('file') instanceof File
+            ? (formData.get('file') as File).name
+            : 'unknown-file';
+
+          // Return a successful response but with isStatement flag instead of an error
           return NextResponse.json({
-            error: "This document appears to be an account statement or receipt, not an invoice.",
-            details: "Please upload a valid invoice document. Account statements, receipts, and other financial documents are not supported."
-          }, { status: 400 });
+            isStatement: true,
+            message: "This document appears to be an account statement or receipt, not an invoice.",
+            details: "Please upload a valid invoice document. Account statements, receipts, and other financial documents are not supported.",
+            url: `data:${file.type};base64,${buffer.toString('base64')}`,
+            pathname: `/uploads/${filename}`,
+            contentType: file.type,
+            agentResponse: "This document appears to be an account statement or receipt, not an invoice. Please upload a valid invoice document. Account statements, receipts, and other financial documents are not supported."
+          });
         }
       } catch (error) {
         console.error("Document type check failed, proceeding with main validation:", error);
@@ -87,9 +102,14 @@ export async function POST(request: Request) {
           const isInvoice = validateIsInvoice(extractedData);
           if (!isInvoice) {
             return NextResponse.json({
-              error: "The uploaded document doesn't appear to be an invoice. Please upload a valid invoice document.",
-              details: "We couldn't find key invoice information such as invoice number, line items, or total amount."
-            }, { status: 400 });
+              isStatement: true,
+              message: "The uploaded document doesn't appear to be an invoice. Please upload a valid invoice document.",
+              details: "We couldn't find key invoice information such as invoice number, line items, or total amount.",
+              url: `data:${file.type};base64,${buffer.toString('base64')}`,
+              pathname: `/uploads/${uniqueFilename}`,
+              contentType: file.type,
+              agentResponse: "The uploaded document doesn't appear to be an invoice. Please upload a valid invoice document. We couldn't find key invoice information such as invoice number, line items, or total amount."
+            });
           }
 
           // Save invoice to database
@@ -1390,21 +1410,112 @@ function validateIsInvoice(extractedData: any): boolean {
     extractedData.vendor !== 'Unknown Vendor' &&
     extractedData.vendor.length > 0;
 
-  // Check for keywords that indicate account statements
-  const isLikelyStatement = typeof extractedData.vendor === 'string' && (
-    /bank\s+statement/i.test(extractedData.vendor) ||
-    /account\s+statement/i.test(extractedData.vendor) ||
-    /credit\s+card/i.test(extractedData.vendor)
-  );
+  // Check for statement keywords across all text fields
+  const statementKeywords = [
+    /bank\s+statement/i,
+    /account\s+statement/i,
+    /credit\s+card/i,
+    /statement\s+of\s+account/i,
+    /monthly\s+statement/i,
+    /quarterly\s+statement/i,
+    /account\s+summary/i,
+    /balance\s+summary/i,
+    /transaction\s+history/i,
+    /account\s+activity/i,
+    /opening\s+balance/i,
+    /closing\s+balance/i,
+    /condominium\s+association/i,
+    /homeowners\s+association/i,
+    /hoa/i,
+    /assessment/i,
+    /maintenance\s+fee/i,
+    /regular\s+assessment/i,
+    /special\s+assessment/i,
+    /association\s+fee/i,
+    /monthly\s+fee/i,
+    /reserve\s+fund/i
+  ];
 
-  // If any statement indicators are present, it's likely not an invoice
-  if (isLikelyStatement) {
+  // Check for receipt keywords across all text fields
+  const receiptKeywords = [
+    /receipt/i,
+    /thank\s+you\s+for\s+your\s+purchase/i,
+    /thank\s+you\s+for\s+shopping/i,
+    /cash\s+receipt/i,
+    /payment\s+receipt/i,
+    /store\s+receipt/i,
+    /return\s+policy/i,
+    /cashier:/i,
+    /terminal:/i,
+    /register:/i,
+    /transaction\s+id/i,
+    /card\s+\w+\s+\d{4}/i
+  ];
+
+  // Check all text fields for statement or receipt keywords
+  const allTextFields = [
+    extractedData.vendor || '',
+    extractedData.customer || '',
+    extractedData.invoiceNumber || '',
+    ...((extractedData.items || []).map((item: any) => item.description || '')),
+  ].join(' ');
+
+  // Check if any statement keywords are present
+  const isLikelyStatement = statementKeywords.some(keyword => keyword.test(allTextFields));
+
+  // Check if any receipt keywords are present
+  const isLikelyReceipt = receiptKeywords.some(keyword => keyword.test(allTextFields));
+
+  // Check for statement-specific structural indicators
+  const hasStatementStructure =
+    (!hasInvoiceNumber) && // Statements often lack invoice numbers
+    (allTextFields.includes('balance') && allTextFields.includes('transaction')) ||
+    (allTextFields.includes('payment') && allTextFields.includes('balance'));
+
+  // Check for receipt-specific structural indicators
+  const hasReceiptStructure =
+    (!hasInvoiceNumber) && // Receipts often lack invoice numbers
+    allTextFields.toLowerCase().includes('total') &&
+    !allTextFields.toLowerCase().includes('invoice');
+
+  // Check for condominium/HOA statements
+  const isCondoStatement =
+    (/condominium|association|community|homeowner/i.test(allTextFields)) &&
+    (!hasLineItems || extractedData.items.length < 2);
+
+  // Check for suspiciously empty invoices (no line items but has total)
+  const isEmptyInvoice =
+    (!hasLineItems || extractedData.items.length === 0) &&
+    (extractedData.subtotal > 0 || extractedData.total > 0);
+
+  // Check for numeric inconsistencies (large difference between subtotal and total)
+  const hasNumericInconsistency =
+    (Math.abs(extractedData.subtotal - extractedData.total) > 1000) ||
+    (extractedData.subtotal > 1000 && extractedData.total < 100);
+
+  // If any statement or receipt indicators are present, it's not a valid invoice
+  if (isLikelyStatement || isLikelyReceipt ||
+    hasStatementStructure || hasReceiptStructure ||
+    isCondoStatement || isEmptyInvoice ||
+    hasNumericInconsistency) {
+    console.log('Document rejected for the following reasons:', {
+      isLikelyStatement,
+      isLikelyReceipt,
+      hasStatementStructure,
+      hasReceiptStructure,
+      isCondoStatement,
+      isEmptyInvoice,
+      hasNumericInconsistency,
+      subtotal: extractedData.subtotal,
+      total: extractedData.total,
+      lineItemCount: extractedData.items?.length || 0
+    });
     return false;
   }
 
   // Check if at least some key invoice features are present
-  // We require at least invoice number or line items, plus a total amount
-  return (hasInvoiceNumber || hasLineItems) && hasTotal && hasVendorInfo;
+  // We require invoice number, at least one line item, and matching total amounts
+  return hasInvoiceNumber && hasLineItems && hasTotal && hasVendorInfo;
 }
 
 // New function to perform preliminary document type check
@@ -1423,24 +1534,119 @@ async function preliminaryDocumentTypeCheck(file: Blob): Promise<boolean> {
             // Use Gemini API to check document type
             const geminiData = await processWithGeminiVision(buffer, 'application/pdf');
 
-            // More comprehensive check for statement indicators in the data
-            const isLikelyStatement =
-              // Check vendor name for statement words
-              (
-                /statement/i.test(geminiData.vendor || '') ||
-                /account/i.test(geminiData.vendor || '') ||
-                /bank/i.test(geminiData.vendor || '') ||
-                /credit\s+card/i.test(geminiData.vendor || '')
-              ) ||
-              // Check for typical statement features
-              (
-                (!geminiData.invoiceNumber || geminiData.invoiceNumber === 'Unknown') &&
-                (!geminiData.items || geminiData.items.length === 0 || geminiData.items[0].description.includes('Unable to extract')) &&
-                (geminiData.total === 0 || !geminiData.total)
-              );
+            // First, do a quick check for empty line items with subtotal
+            if ((!geminiData.items || geminiData.items.length === 0) &&
+              (geminiData.subtotal > 0 || geminiData.total > 0)) {
+              console.log('Document appears to be a statement - has totals but no line items');
+              return false;
+            }
 
-            if (isLikelyStatement) {
-              console.log('Document appears to be a statement rather than an invoice');
+            // Check for major inconsistencies in totals
+            if (Math.abs(geminiData.subtotal - geminiData.total) > 1000 ||
+              (geminiData.subtotal > 1000 && geminiData.total < 100)) {
+              console.log('Document appears to be invalid - major inconsistencies in totals');
+              console.log(`Subtotal: ${geminiData.subtotal}, Total: ${geminiData.total}`);
+              return false;
+            }
+
+            // Statement indicator keywords - expanded with more HOA/condo terms
+            const statementKeywords = [
+              /statement/i,
+              /account/i,
+              /bank/i,
+              /credit\s+card/i,
+              /balance/i,
+              /transaction/i,
+              /withdrawal/i,
+              /deposit/i,
+              /available\s+credit/i,
+              /interest\s+charged/i,
+              /minimum\s+payment/i,
+              /condominium/i,
+              /association/i,
+              /homeowner/i,
+              /community/i,
+              /hoa/i,
+              /assessment/i,
+              /maintenance\s+fee/i,
+              /monthly\s+fee/i,
+              /reserve\s+fund/i
+            ];
+
+            // Receipt indicator keywords
+            const receiptKeywords = [
+              /receipt/i,
+              /thank\s+you/i,
+              /purchase/i,
+              /return\s+policy/i,
+              /cashier/i,
+              /terminal/i,
+              /transaction\s+id/i,
+              /card\s+\w+\s+\d{4}/i, // Card type ending in 1234
+              /store\s+\#/i
+            ];
+
+            // Create a single text from all extracted data for keyword search
+            const allExtractedText = [
+              geminiData.vendor || '',
+              geminiData.customer || '',
+              geminiData.invoiceNumber || '',
+              ...(geminiData.items || []).map((item: any) => item.description || '')
+            ].join(' ');
+
+            // Check for statement indicators in any field
+            const hasStatementKeywords = statementKeywords.some(keyword =>
+              keyword.test(geminiData.vendor || '') ||
+              keyword.test(geminiData.customer || '') ||
+              keyword.test(allExtractedText)
+            );
+
+            // Check for receipt indicators in any field
+            const hasReceiptKeywords = receiptKeywords.some(keyword =>
+              keyword.test(geminiData.vendor || '') ||
+              keyword.test(geminiData.customer || '') ||
+              keyword.test(allExtractedText)
+            );
+
+            // More comprehensive check for statement indicators in the data structure
+            const hasStatementStructure =
+              (!geminiData.invoiceNumber || geminiData.invoiceNumber === 'Unknown') &&
+              (!geminiData.items || geminiData.items.length === 0 ||
+                geminiData.items[0].description.includes('Unable to extract')) &&
+              (geminiData.total === 0 || !geminiData.total);
+
+            // Check for receipt-specific structure
+            const hasReceiptStructure =
+              (!geminiData.invoiceNumber || geminiData.invoiceNumber === 'Unknown') &&
+              (!geminiData.customer || geminiData.customer === 'Unknown Customer') &&
+              geminiData.items && geminiData.items.length > 0 &&
+              geminiData.total > 0;
+
+            // Check specifically for condominium/HOA statements
+            const isCondoStatement =
+              (/condominium|association|community|homeowner/i.test(allExtractedText)) &&
+              (!geminiData.items || geminiData.items.length < 2);
+
+            // Log the extracted data for debugging
+            console.log('Document validation check:', {
+              vendor: geminiData.vendor,
+              customer: geminiData.customer,
+              invoiceNumber: geminiData.invoiceNumber,
+              itemCount: geminiData.items?.length || 0,
+              subtotal: geminiData.subtotal,
+              total: geminiData.total,
+              hasStatementKeywords,
+              hasReceiptKeywords,
+              hasStatementStructure,
+              hasReceiptStructure,
+              isCondoStatement
+            });
+
+            // If any statement or receipt indicators are present, reject the file
+            if (hasStatementKeywords || hasReceiptKeywords ||
+              hasStatementStructure || (hasReceiptStructure && hasReceiptKeywords) ||
+              isCondoStatement) {
+              console.log('Document appears to be a statement or receipt rather than an invoice');
               return false;
             }
 
@@ -1448,13 +1654,21 @@ async function preliminaryDocumentTypeCheck(file: Blob): Promise<boolean> {
             if (geminiData.items &&
               geminiData.items.length > 0 &&
               !geminiData.items[0].description.includes('Unable to extract') &&
-              geminiData.total > 0) {
+              geminiData.total > 0 &&
+              geminiData.invoiceNumber &&
+              geminiData.invoiceNumber !== 'Unknown' &&
+              Math.abs(geminiData.subtotal - geminiData.total) < 500) { // Ensure totals are reasonably close
               console.log('Document appears to be a valid invoice');
               return true;
             }
+
+            // If we get here, we couldn't confirm it's an invoice
+            console.log('Could not confirm document is a valid invoice');
+            return false;
           } catch (error) {
             console.error('Gemini preliminary check failed:', error);
-            // Continue with simplified checking
+            // Fall back to rejecting if we can't process properly
+            return false;
           }
         }
 
