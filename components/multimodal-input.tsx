@@ -195,7 +195,8 @@ function PureMultimodalInput({
     formData.append('file', file);
 
     // Check if user message indicates this is an invoice
-    if (userInput && /process\s+this\s+invoice|extract\s+invoice|analyze\s+invoice|read\s+invoice/i.test(userInput)) {
+    const userIsAskingToSubmitInvoice = userInput && /process\s+this\s+invoice|extract\s+invoice|analyze\s+invoice|read\s+invoice/i.test(userInput);
+    if (userIsAskingToSubmitInvoice) {
       formData.append('type', 'invoice');
     }
 
@@ -274,6 +275,16 @@ function PureMultimodalInput({
             documentId: documentId // Include document ID in attachment for potential use
           };
         }
+        if (userIsAskingToSubmitInvoice && data.isStatement) {
+          // Return a message to the user instead of showing a toast error
+          return {
+            url: `data:${contentType};base64,${data.url.split(',')[1]}`,
+            name: pathname,
+            contentType: contentType,
+            isStatement: true,
+            message: data.message || "This document appears to be an account statement or receipt, not an invoice. Please upload a valid invoice document. Account statements, receipts, and other financial documents are not supported."
+          };
+        }
 
         // For large files of other types, also consider storing in sessionStorage
         // to avoid token overflow if file size is over 1MB
@@ -301,9 +312,24 @@ function PureMultimodalInput({
           name: pathname,
           contentType: contentType,
         };
+      } else {
+        const errorData = await response.json();
+        // Only show toast error if it's not an invoice validation issue
+        if (!(userIsAskingToSubmitInvoice && errorData.isStatement)) {
+          toast.error(errorData.error || 'Failed to upload file');
+        }
+
+        // If it's an invoice validation issue, return the statement message
+        if (userIsAskingToSubmitInvoice && errorData.isStatement) {
+          return {
+            url: errorData.url || '',
+            name: errorData.pathname || file.name,
+            contentType: file.type,
+            isStatement: true,
+            message: errorData.message || "This document appears to be an account statement or receipt, not an invoice. Please upload a valid invoice document. Account statements, receipts, and other financial documents are not supported."
+          };
+        }
       }
-      const { error } = await response.json();
-      toast.error(error);
     } catch (error) {
       toast.error('Failed to upload file, please try again!');
     }
