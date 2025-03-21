@@ -219,6 +219,10 @@ const PurePreviewMessage = ({
 export const PreviewMessage = memo(
   PurePreviewMessage,
   (prevProps, nextProps) => {
+    if (prevProps.message.role === 'system' || nextProps.message.role === 'system') {
+      return true;
+    }
+
     if (prevProps.isLoading !== nextProps.isLoading) return false;
     if (prevProps.message.reasoning !== nextProps.message.reasoning)
       return false;

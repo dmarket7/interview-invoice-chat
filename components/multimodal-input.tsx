@@ -20,6 +20,7 @@ import {
 } from 'react';
 import { toast } from 'sonner';
 import { useLocalStorage, useWindowSize } from 'usehooks-ts';
+import { nanoid } from 'nanoid';
 
 import { sanitizeUIMessages } from '@/lib/utils';
 
@@ -136,16 +137,67 @@ function PureMultimodalInput({
           const fileList = fileInputRef.current?.files;
           if (fileList) {
             const files = Array.from(fileList);
-            const uploadPromises = files.map(file => uploadFile(file, currentInput));
-            const uploadedAttachments = await Promise.all(uploadPromises);
-            const successfullyUploadedAttachments = uploadedAttachments.filter(
-              (attachment) => attachment !== undefined,
-            );
 
-            // Submit with the uploaded attachments
-            handleSubmit(undefined, {
-              experimental_attachments: successfullyUploadedAttachments,
+            // First, add a message indicating upload is in progress
+            // This prevents the AI from responding before the upload completes
+            const uploadingMessageId = nanoid();
+            append({
+              id: uploadingMessageId,
+              role: 'user',
+              content: currentInput ?
+                `${currentInput}\n\n[Uploading file(s): ${files.map(f => f.name).join(', ')}...]` :
+                `[Uploading file(s): ${files.map(f => f.name).join(', ')}...]`,
             });
+
+            // Process uploads
+            const uploadPromises = files.map(file => uploadFile(file, currentInput));
+            const uploadResults = await Promise.all(uploadPromises);
+
+            // Filter out undefined results
+            const validResults = uploadResults.filter(result => result !== undefined);
+
+            // Check if we have text modifications to add to the user's message
+            const textModifications = validResults
+              .filter(result => result.textModification)
+              .map(result => result.textModification)
+              .join('');
+
+            // Filter to get only valid attachments (no textModification ones)
+            const validAttachments = validResults
+              .filter(result => !result.skipAttachment)
+              .map(result => ({
+                url: result.url,
+                name: result.name,
+                contentType: result.contentType
+              }));
+
+            // Remove the temporary "uploading" message
+            setMessages(prevMessages => prevMessages.filter(msg => msg.id !== uploadingMessageId));
+
+            // Add text modifications to the input before submitting
+            const finalUserMessage = currentInput + textModifications;
+
+            // First send user message with upload context
+            const messageId = await append({
+              role: 'user',
+              content: finalUserMessage,
+            }, {
+              experimental_attachments: validAttachments.length > 0 ? validAttachments : [],
+            });
+
+            // Check if this is an invoice upload based on the presence of "invoice file" in textModifications
+            const isInvoiceUpload = validResults.some(r => r.textModification?.includes('invoice file'));
+
+            // If an invoice was uploaded, immediately inject a system message to guide the AI
+            if (isInvoiceUpload && messageId) {
+              // Give a small delay to ensure the user message is processed first
+              setTimeout(() => {
+                append({
+                  role: 'system',
+                  content: `IMPORTANT: The user has just uploaded an invoice file as shown in their message. Please process it using the uploadInvoice tool with the filename parameter set to the filename shown in their message. Do not ask them to upload an invoice.`
+                });
+              }, 100);
+            }
           }
         } catch (error) {
           console.error('Error uploading files!', error);
@@ -156,9 +208,24 @@ function PureMultimodalInput({
           setAttachments([]);
         }
       } else {
-        // If no uploads, just submit with existing attachments
+        // If no uploads, just submit with existing attachments - ensure no PDFs
+        console.log('DEBUG - Submitting with existing attachments:', JSON.stringify(attachments));
+
+        // Process attachments to ensure no PDF mime types are sent directly
+        const processedAttachments = attachments.map(attachment => {
+          if (attachment.contentType === 'application/pdf') {
+            // For PDFs, use a text-based data URL instead
+            return {
+              url: attachment.url,
+              name: attachment.name,
+              contentType: 'text/plain', // Change to text format
+            };
+          }
+          return attachment;
+        });
+
         handleSubmit(undefined, {
-          experimental_attachments: attachments,
+          experimental_attachments: processedAttachments,
         });
         setAttachments([]);
       }
@@ -179,6 +246,8 @@ function PureMultimodalInput({
     chatId,
     uploadQueue,
     input,
+    append,
+    setMessages,
   ]);
 
   const uploadFile = async (file: File, userInput: string) => {
@@ -212,91 +281,108 @@ function PureMultimodalInput({
         const data = await response.json();
         const { url, pathname, contentType } = data;
 
-        // NEW CODE: Store the original filename for agent reference
-        // This helps the agent reference the file by its original name
-        const originalFilename = file.name;
-        const fileReference = `${originalFilename}|${Date.now()}`;
+        // PDF files need special handling to avoid the OpenAI API error
+        if (contentType === 'application/pdf') {
+          // For invoices, we already have structured data processing
+          if (data.isInvoice && data.csvData) {
+            // Store invoice information for later use by the agent
+            if (typeof window !== 'undefined') {
+              console.log('Storing invoice data in localStorage:', data.invoiceId);
+              localStorage.setItem('lastUploadedInvoiceId', data.invoiceId);
+              localStorage.setItem('lastUploadedInvoiceFilename', pathname);
 
-        // Store a mapping of filename to data key in sessionStorage
-        // This allows the agent to reference the file by name
-        try {
-          const fileMapKey = 'uploaded-file-map';
-          let fileMap: Record<string, {
-            storageKey: string;
-            timestamp: number;
-            type: string;
-            isInvoice: boolean;
-          }> = {};
-          const existingMap = sessionStorage.getItem(fileMapKey);
+              // Store additional metadata for fallback retrieval
+              if (data.extractedData) {
+                localStorage.setItem('lastInvoiceVendor', data.extractedData.vendor || 'Unknown');
+                localStorage.setItem('lastInvoiceCustomer', data.extractedData.customer || 'Unknown');
+                localStorage.setItem('lastInvoiceTotal', data.extractedData.total?.toString() || '0');
+                localStorage.setItem('lastInvoiceNumber', data.extractedData.invoiceNumber || 'Unknown');
+                localStorage.setItem('lastInvoiceDate', data.extractedData.date || '');
+                localStorage.setItem(`invoice_data_${data.invoiceId}`, JSON.stringify(data.extractedData));
+              }
 
-          if (existingMap) {
-            fileMap = JSON.parse(existingMap);
+              // Show a toast to inform the user
+              toast.success('Invoice uploaded successfully! The AI will process it automatically.');
+            }
+
+            // Create a text representation instead of sending raw PDF
+            const textContent = `Document: ${data.documentTitle || `Invoice: ${file.name}`}\n\n` +
+              `Extracted Invoice Data:\n${JSON.stringify(data.extractedData, null, 2)}\n\n` +
+              `CSV Data:\n${data.csvData}`;
+
+            // Instead of appending an assistant message, modify the user's input
+            // to include the invoice information
+            if (data.invoiceId) {
+              // Show success toast instead of appending a message
+              toast.success(`Invoice processed successfully with ID: ${data.invoiceId}`);
+
+              // Store filename in local storage for the agent to use
+              localStorage.setItem('lastUploadedInvoiceFilename', pathname);
+              localStorage.setItem('lastUploadedInvoiceId', data.invoiceId);
+
+              // Return an explicit message that makes it clear to the AI that
+              // an invoice has already been processed and is ready for analysis
+              return {
+                textModification: `\n\n[INVOICE UPLOADED]
+I've uploaded an invoice file "${file.name}" with ID: ${data.invoiceId}.
+
+INVOICE DETAILS:
+- Vendor: ${data.extractedData?.vendor || 'unknown vendor'}
+- Customer: ${data.extractedData?.customer || 'unknown customer'}
+- Total: ${data.extractedData?.total || 'unknown amount'}
+- Invoice Number: ${data.extractedData?.invoiceNumber || 'unknown'}
+- Date: ${data.extractedData?.date || 'unknown'}
+
+Please analyze this invoice data using the uploadInvoice tool. The correct filename parameter to use is exactly: "${pathname}"`,
+                skipAttachment: true
+              };
+            }
+
+            // Return text content in a format compatible with the API
+            return {
+              url: `data:text/plain;base64,${btoa(textContent)}`,
+              name: pathname,
+              contentType: 'text/plain',
+            };
           }
 
-          // Map the original filename to the storage key or document ID
-          fileMap[originalFilename] = {
-            storageKey: data.isInvoice ? data.documentId : pathname,
-            timestamp: Date.now(),
-            type: contentType,
-            isInvoice: data.isInvoice || false
-          };
+          // For statements or other PDFs
+          if (userIsAskingToSubmitInvoice && data.isStatement) {
+            const message = data.message || "This document appears to be an account statement or receipt, not an invoice.";
+            toast.info(message);
 
-          // Save the updated map
-          sessionStorage.setItem(fileMapKey, JSON.stringify(fileMap));
-        } catch (mapError) {
-          // Continue even if mapping fails - worst case the agent won't find the file by name
-          console.error('Error storing file reference map:', mapError);
+            // Return a text modification instead of an attachment
+            return {
+              textModification: `\n\nI've uploaded a document that appears to be a statement or receipt, not an invoice. ${message} Please advise on what I should do next.`,
+              skipAttachment: true
+            };
+          }
+
+          // For other PDFs, use extracted text from server
+          if (data.extractedText) {
+            // Return a text modification instead of an attachment
+            const timestamp = Date.now();
+            localStorage.setItem('lastUploadedPDFFilename', pathname);
+
+            return {
+              textModification: `\n\nI've uploaded a PDF document: "${file.name}" with filename "${pathname}". The document contains extracted text. Please analyze this document and provide insights.`,
+              skipAttachment: true
+            };
+          } else {
+            // Fallback message if no text was extracted
+            return {
+              textModification: `\n\nI've uploaded a PDF document: "${file.name}" with filename "${pathname}". Please help me analyze this document.`,
+              skipAttachment: true
+            };
+          }
         }
 
-        // If this is invoice data and contains processed results, store in sessionStorage
-        if (data.isInvoice && data.csvData) {
-          const storageKey = `file-data-${Date.now()}`;
-
-          sessionStorage.setItem(storageKey, JSON.stringify({
-            csvData: data.csvData,
-            extractedData: data.extractedData,
-            fileName: file.name,
-            contentType,
-            documentTitle: data.documentTitle || `Invoice: ${file.name}`
-          }));
-
-          // Return a reference to the data in sessionStorage instead of the raw data
-          return {
-            url: `sessionStorage://${storageKey}`,
-            name: pathname,
-            contentType: contentType,
-            isStorageReference: true,
-          };
-        }
-        if (userIsAskingToSubmitInvoice && data.isStatement) {
-          // Return a message to the user instead of showing a toast error
-          return {
-            url: `data:${contentType};base64,${data.url.split(',')[1]}`,
-            name: pathname,
-            contentType: contentType,
-            isStatement: true,
-            message: data.message || "This document appears to be an account statement or receipt, not an invoice. Please upload a valid invoice document. Account statements, receipts, and other financial documents are not supported."
-          };
-        }
-
-        // For large files of other types, also consider storing in sessionStorage
-        // to avoid token overflow if file size is over 1MB
+        // For non-PDF files, return a regular attachment
         if (fileSizeInMB > 1) {
-          const storageKey = `file-data-${Date.now()}`;
-          sessionStorage.setItem(storageKey, JSON.stringify({
-            url,
-            name: pathname,
-            contentType,
-            fileName: file.name,
-            sizeInMB: fileSizeInMB.toFixed(1)
-          }));
-
-          // Return a reference that includes size info for the UI
           return {
-            url: `sessionStorage://${storageKey}`,
-            name: `${pathname} (${fileSizeInMB.toFixed(1)}MB - stored locally)`,
+            url,
+            name: `${pathname} (${fileSizeInMB.toFixed(1)}MB)`,
             contentType: contentType,
-            isStorageReference: true
           };
         }
 
@@ -312,14 +398,14 @@ function PureMultimodalInput({
           toast.error(errorData.error || 'Failed to upload file');
         }
 
-        // If it's an invoice validation issue, return the statement message
+        // If it's an invoice validation issue, return a text modification
         if (userIsAskingToSubmitInvoice && errorData.isStatement) {
+          const message = errorData.message || "This document appears to be an account statement or receipt, not an invoice.";
+          toast.info(message);
+
           return {
-            url: errorData.url || '',
-            name: errorData.pathname || file.name,
-            contentType: file.type,
-            isStatement: true,
-            message: errorData.message || "This document appears to be an account statement or receipt, not an invoice. Please upload a valid invoice document. Account statements, receipts, and other financial documents are not supported."
+            textModification: `\n\nI tried to upload an invoice, but the system detected that this document is likely ${message} Please advise on what I should do next.`,
+            skipAttachment: true
           };
         }
       }
@@ -530,3 +616,4 @@ const SendButton = memo(PureSendButton, (prevProps, nextProps) => {
   if (prevProps.input !== nextProps.input) return false;
   return true;
 });
+

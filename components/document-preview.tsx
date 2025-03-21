@@ -84,18 +84,15 @@ export function DocumentPreview({
     return <LoadingSkeleton blockKind={result.kind ?? args.kind} />;
   }
 
-  const document: Document | null = previewDocument
-    ? previewDocument
-    : block.status === 'streaming'
-      ? {
-          title: block.title,
-          kind: block.kind,
-          content: block.content,
-          id: block.documentId,
-          createdAt: new Date(),
-          userId: 'noop',
-        }
-      : null;
+  const document = block.documentId
+    ? {
+      title: block.title,
+      kind: block.kind,
+      content: block.content,
+      id: block.documentId,
+      createdAt: new Date(),
+    }
+    : null;
 
   if (!document) return <LoadingSkeleton blockKind={block.kind} />;
 
@@ -112,7 +109,7 @@ export function DocumentPreview({
   );
 }
 
-const LoadingSkeleton = ({ blockKind }: { blockKind: BlockKind }) => (
+const LoadingSkeleton = ({ blockKind }: { blockKind: BlockKind; }) => (
   <div className="w-full">
     <div className="p-4 border rounded-t-2xl flex flex-row gap-2 items-center justify-between dark:bg-muted h-[57px] dark:border-zinc-700 border-b-0">
       <div className="flex flex-row items-center gap-3">
@@ -154,18 +151,18 @@ const PureHitboxLayer = ({
         block.status === 'streaming'
           ? { ...block, isVisible: true }
           : {
-              ...block,
-              title: result.title,
-              documentId: result.id,
-              kind: result.kind,
-              isVisible: true,
-              boundingBox: {
-                left: boundingBox.x,
-                top: boundingBox.y,
-                width: boundingBox.width,
-                height: boundingBox.height,
-              },
+            ...block,
+            title: result.title,
+            documentId: result.id,
+            kind: result.kind,
+            isVisible: true,
+            boundingBox: {
+              left: boundingBox.x,
+              top: boundingBox.y,
+              width: boundingBox.width,
+              height: boundingBox.height,
             },
+          },
       );
     },
     [setBlock, result],
@@ -228,7 +225,7 @@ const DocumentHeader = memo(PureDocumentHeader, (prevProps, nextProps) => {
   return true;
 });
 
-const DocumentContent = ({ document }: { document: Document }) => {
+const DocumentContent = ({ document }: { document: Document; }) => {
   const { block } = useBlock();
 
   const containerClassName = cn(
@@ -244,18 +241,18 @@ const DocumentContent = ({ document }: { document: Document }) => {
     isCurrentVersion: true,
     currentVersionIndex: 0,
     status: block.status,
-    saveContent: () => {},
+    saveContent: () => { },
     suggestions: [],
   };
 
   return (
     <div className={containerClassName}>
       {document.kind === 'text' ? (
-        <Editor {...commonProps} onSaveContent={() => {}} />
+        <Editor {...commonProps} onSaveContent={() => { }} />
       ) : document.kind === 'code' ? (
         <div className="flex flex-1 relative w-full">
           <div className="absolute inset-0">
-            <CodeEditor {...commonProps} onSaveContent={() => {}} />
+            <CodeEditor {...commonProps} onSaveContent={() => { }} />
           </div>
         </div>
       ) : document.kind === 'sheet' ? (

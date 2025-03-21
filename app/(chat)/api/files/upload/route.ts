@@ -68,9 +68,6 @@ export async function POST(request: Request) {
             isStatement: true,
             message: "This document appears to be an account statement or receipt, not an invoice.",
             details: "Please upload a valid invoice document. Account statements, receipts, and other financial documents are not supported.",
-            url: `data:${file.type};base64,${buffer.toString('base64')}`,
-            pathname: `/uploads/${filename}`,
-            contentType: file.type,
             agentResponse: "This document appears to be an account statement or receipt, not an invoice. Please upload a valid invoice document. Account statements, receipts, and other financial documents are not supported."
           });
         }
@@ -105,9 +102,6 @@ export async function POST(request: Request) {
               isStatement: true,
               message: "The uploaded document doesn't appear to be an invoice. Please upload a valid invoice document.",
               details: "We couldn't find key invoice information such as invoice number, line items, or total amount.",
-              url: `data:${file.type};base64,${buffer.toString('base64')}`,
-              pathname: `/uploads/${uniqueFilename}`,
-              contentType: file.type,
               agentResponse: "The uploaded document doesn't appear to be an invoice. Please upload a valid invoice document. We couldn't find key invoice information such as invoice number, line items, or total amount."
             });
           }
@@ -127,15 +121,15 @@ export async function POST(request: Request) {
                 // Try to parse the date in multiple formats
                 try {
                   // Try MM/DD/YYYY format
-                  if (parseInt(parts[0]) <= 12) {
+                  if (Number.parseInt(parts[0]) <= 12) {
                     const dateCandidate = new Date(`${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`);
-                    if (!isNaN(dateCandidate.getTime())) {
+                    if (!Number.isNaN(dateCandidate.getTime())) {
                       invoiceDate = dateCandidate;
                     }
                   } else {
                     // Try DD/MM/YYYY format
                     const dateCandidate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
-                    if (!isNaN(dateCandidate.getTime())) {
+                    if (!Number.isNaN(dateCandidate.getTime())) {
                       invoiceDate = dateCandidate;
                     }
                   }
@@ -151,7 +145,7 @@ export async function POST(request: Request) {
           }
 
           // Ensure we have a valid date at this point
-          if (!invoiceDate || isNaN(invoiceDate.getTime())) {
+          if (!invoiceDate || Number.isNaN(invoiceDate.getTime())) {
             console.warn('Invalid invoice date detected, using current date instead');
             invoiceDate = now;
           }
@@ -165,15 +159,15 @@ export async function POST(request: Request) {
                 // Try to parse the date in multiple formats
                 try {
                   // Try MM/DD/YYYY format
-                  if (parseInt(parts[0]) <= 12) {
+                  if (Number.parseInt(parts[0]) <= 12) {
                     const dateCandidate = new Date(`${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`);
-                    if (!isNaN(dateCandidate.getTime())) {
+                    if (!Number.isNaN(dateCandidate.getTime())) {
                       dueDate = dateCandidate;
                     }
                   } else {
                     // Try DD/MM/YYYY format
                     const dateCandidate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
-                    if (!isNaN(dateCandidate.getTime())) {
+                    if (!Number.isNaN(dateCandidate.getTime())) {
                       dueDate = dateCandidate;
                     }
                   }
@@ -189,7 +183,7 @@ export async function POST(request: Request) {
           }
 
           // Ensure we have a valid due date
-          if (!dueDate || isNaN(dueDate.getTime())) {
+          if (!dueDate || Number.isNaN(dueDate.getTime())) {
             console.warn('Invalid due date detected, using default 30 days from now');
             dueDate = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
           }
@@ -246,15 +240,30 @@ export async function POST(request: Request) {
           console.log("Generated CSV data for invoice:");
           console.log(csvData);
 
+          // Get the base URL from environment variables or use an empty string as fallback
+          const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
+
+          // Ensure extractedText is defined
+          const extractedText = extractedData.extractionMethods ?
+            `Invoice processed using: ${extractedData.extractionMethods.join(', ')}.\n\n` +
+            `Invoice Number: ${extractedData.invoiceNumber}\n` +
+            `Date: ${extractedData.date}\n` +
+            `Due Date: ${extractedData.dueDate}\n` +
+            `Vendor: ${extractedData.vendor}\n` +
+            `Customer: ${extractedData.customer}\n` +
+            `Total: ${extractedData.total}`
+            : '';
+
           return NextResponse.json({
-            url: `data:${file.type};base64,${buffer.toString('base64')}`,
+            url: `${BASE_URL}/api/invoices/${invoiceId}`,
             pathname: `/uploads/${uniqueFilename}`,
             contentType: file.type,
             isInvoice: true,
-            csvData,
-            extractedData,
-            extractionMethods: extractedData.extractionMethods || ['regex'],
             invoiceId,
+            extractedText: extractedText,
+            extractedData: extractedData,
+            csvData: csvData,
+            documentTitle: `Invoice: ${extractedData.invoiceNumber || uniqueFilename}`
           });
         } catch (invoiceError: any) {
           console.error('Invoice processing error:', invoiceError);
@@ -321,7 +330,7 @@ function extractInvoiceDataWithRegex(text: string) {
   let invoiceNumber = 'Unknown';
   for (const { pattern, score } of invoiceNumPatterns) {
     const match = flatText.match(pattern);
-    if (match && match[1]) {
+    if (match?.[1]) {
       invoiceNumber = match[1];
       confidence.invoiceNumber = score;
       break;
@@ -340,7 +349,7 @@ function extractInvoiceDataWithRegex(text: string) {
   let date = new Date().toISOString().split('T')[0]; // Default to today
   for (const { pattern, score } of datePatterns) {
     const match = flatText.match(pattern);
-    if (match && match[1]) {
+    if (match?.[1]) {
       date = match[1];
       confidence.date = score;
       break;
@@ -360,10 +369,10 @@ function extractInvoiceDataWithRegex(text: string) {
 
   for (const { pattern, score } of dueDatePatterns) {
     const match = flatText.match(pattern);
-    if (match && match[1]) {
+    if (match?.[1]) {
       // Check if this is a "Net X days" format
       if (pattern.toString().includes('Net')) {
-        netDays = parseInt(match[1]);
+        netDays = Number.parseInt(match[1]);
         confidence.dueDate = score;
       } else {
         dueDate = match[1];
@@ -378,7 +387,7 @@ function extractInvoiceDataWithRegex(text: string) {
     try {
       // Parse the invoice date and add net days
       const dateObj = new Date(date);
-      if (!isNaN(dateObj.getTime())) {
+      if (!Number.isNaN(dateObj.getTime())) {
         dateObj.setDate(dateObj.getDate() + netDays);
         dueDate = dateObj.toISOString().split('T')[0];
       }
@@ -411,7 +420,7 @@ function extractInvoiceDataWithRegex(text: string) {
     // Try the patterns
     for (const { pattern, score } of vendorPatterns) {
       const match = flatText.match(pattern);
-      if (match && match[1] && match[1].length > 3) {
+      if (match?.[1] && match[1].length > 3) {
         vendor = match[1].trim();
         confidence.vendor = score;
         break;
@@ -432,7 +441,7 @@ function extractInvoiceDataWithRegex(text: string) {
   let customer = '';
   for (const { pattern, score } of customerPatterns) {
     const match = flatText.match(pattern);
-    if (match && match[1] && match[1].length > 3) {
+    if (match?.[1] && match[1].length > 3) {
       customer = match[1].trim();
       confidence.customer = score;
       break;
@@ -487,7 +496,7 @@ function extractInvoiceDataWithRegex(text: string) {
 
     // If the discrepancy is small relative to the total, adjust the total to match items
     if (Math.abs(itemsTotal - total) / total < 0.2 || confidence.items > confidence.total) {
-      total = parseFloat(itemsTotal.toFixed(2));
+      total = Number.parseFloat(itemsTotal.toFixed(2));
       console.log(`Adjusted total to match line items: ${total}`);
     }
     // Otherwise, we keep the extracted total as it's likely more reliable
@@ -517,8 +526,8 @@ function findLargestAmount(text: string): number {
   let match;
 
   while ((match = amountRegex.exec(text)) !== null) {
-    const amount = parseFloat(match[1].replace(/,/g, ''));
-    if (!isNaN(amount) && amount > largestAmount) {
+    const amount = Number.parseFloat(match[1].replace(/,/g, ''));
+    if (!Number.isNaN(amount) && amount > largestAmount) {
       largestAmount = amount;
     }
   }
@@ -608,7 +617,7 @@ async function extractInvoiceData(buffer: Buffer) {
                     const page = await pdf.getPage(i);
                     const content = await page.getTextContent();
                     const strings = content.items.map((item: { str: string; }) => item.str);
-                    extractedText += strings.join(' ') + '\n';
+                    extractedText += `${strings.join(' ')}\n`;
                   }
 
                   resolve(extractedText);
@@ -695,7 +704,7 @@ async function extractInvoiceData(buffer: Buffer) {
 }
 
 // New function to process invoice with Gemini Vision
-async function processWithGeminiVision(buffer: Buffer, mimeType: string = 'application/pdf') {
+async function processWithGeminiVision(buffer: Buffer, mimeType = 'application/pdf') {
   const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require('@google/generative-ai');
 
   // Initialize the Gemini API
@@ -959,15 +968,15 @@ function validateInvoiceData(data: any) {
 
   // Ensure all numerical values are converted to numbers
   if (validated.subtotal && typeof validated.subtotal === 'string') {
-    validated.subtotal = parseFloat(validated.subtotal.replace(/[^0-9.-]+/g, ''));
+    validated.subtotal = Number.parseFloat(validated.subtotal.replace(/[^0-9.-]+/g, ''));
   }
 
   if (validated.tax && typeof validated.tax === 'string') {
-    validated.tax = parseFloat(validated.tax.replace(/[^0-9.-]+/g, ''));
+    validated.tax = Number.parseFloat(validated.tax.replace(/[^0-9.-]+/g, ''));
   }
 
   if (validated.total && typeof validated.total === 'string') {
-    validated.total = parseFloat(validated.total.replace(/[^0-9.-]+/g, ''));
+    validated.total = Number.parseFloat(validated.total.replace(/[^0-9.-]+/g, ''));
   }
 
   // Normalize items array
@@ -977,22 +986,22 @@ function validateInvoiceData(data: any) {
 
       // Convert string values to numbers
       if (typeof normalizedItem.quantity === 'string') {
-        normalizedItem.quantity = parseFloat(normalizedItem.quantity.replace(/[^0-9.-]+/g, ''));
+        normalizedItem.quantity = Number.parseFloat(normalizedItem.quantity.replace(/[^0-9.-]+/g, ''));
       }
 
       if (typeof normalizedItem.unitPrice === 'string') {
-        normalizedItem.unitPrice = parseFloat(normalizedItem.unitPrice.replace(/[^0-9.-]+/g, ''));
+        normalizedItem.unitPrice = Number.parseFloat(normalizedItem.unitPrice.replace(/[^0-9.-]+/g, ''));
       }
 
       if (typeof normalizedItem.amount === 'string') {
-        normalizedItem.amount = parseFloat(normalizedItem.amount.replace(/[^0-9.-]+/g, ''));
+        normalizedItem.amount = Number.parseFloat(normalizedItem.amount.replace(/[^0-9.-]+/g, ''));
       }
 
       // Validate amount = quantity * unitPrice
       const calculatedAmount = normalizedItem.quantity * normalizedItem.unitPrice;
       if (Math.abs(calculatedAmount - normalizedItem.amount) > 0.1) {
         console.log(`Correcting inconsistent line item amount: ${normalizedItem.amount} to ${calculatedAmount}`);
-        normalizedItem.amount = parseFloat(calculatedAmount.toFixed(2));
+        normalizedItem.amount = Number.parseFloat(calculatedAmount.toFixed(2));
       }
 
       return normalizedItem;
@@ -1000,13 +1009,13 @@ function validateInvoiceData(data: any) {
 
     // Calculate items total and validate against invoice total
     const calculatedTotal = validated.items.reduce((sum: number, item: any) => sum + item.amount, 0);
-    const calculatedTotalRounded = parseFloat(calculatedTotal.toFixed(2));
+    const calculatedTotalRounded = Number.parseFloat(calculatedTotal.toFixed(2));
 
     // If total doesn't match items sum (with some tolerance for rounding errors)
     if (Math.abs(calculatedTotalRounded - validated.total) > 1) {
       // Check if the difference could be due to tax not included in line items
       const tax = validated.tax || 0;
-      const totalWithTax = parseFloat((calculatedTotalRounded + tax).toFixed(2));
+      const totalWithTax = Number.parseFloat((calculatedTotalRounded + tax).toFixed(2));
 
       // If the total with tax is close to the extracted total, we keep the extracted total
       if (Math.abs(totalWithTax - validated.total) <= 1) {
@@ -1090,11 +1099,11 @@ function extractItemsFromText(text: string) {
 
     while ((match = tabularPattern.exec(itemSection)) !== null) {
       const description = match[1].trim();
-      const quantity = parseFloat(match[2].replace(/,/g, ''));
-      const unitPrice = parseFloat(match[3].replace(/,/g, ''));
-      const amount = parseFloat(match[4].replace(/,/g, ''));
+      const quantity = Number.parseFloat(match[2].replace(/,/g, ''));
+      const unitPrice = Number.parseFloat(match[3].replace(/,/g, ''));
+      const amount = Number.parseFloat(match[4].replace(/,/g, ''));
 
-      if (description && !isNaN(quantity) && !isNaN(unitPrice) && !isNaN(amount)) {
+      if (description && !Number.isNaN(quantity) && !Number.isNaN(unitPrice) && !Number.isNaN(amount)) {
         items.push({ description, quantity, unitPrice, amount });
       }
     }
@@ -1105,16 +1114,16 @@ function extractItemsFromText(text: string) {
       const qtyDescriptionPattern = /(\d+)(?:\s*x\s*|\s+)([^$€£\n]+?)(?:[$€£]\s*|\s+)([\d,]+(?:\.\d+)?)/g;
 
       while ((match = qtyDescriptionPattern.exec(itemSection)) !== null) {
-        const quantity = parseInt(match[1], 10);
+        const quantity = Number.parseInt(match[1], 10);
         const description = match[2].trim();
-        const amount = parseFloat(match[3].replace(/,/g, ''));
+        const amount = Number.parseFloat(match[3].replace(/,/g, ''));
         const unitPrice = quantity > 0 ? amount / quantity : 0;
 
-        if (description && !isNaN(quantity) && !isNaN(amount)) {
+        if (description && !Number.isNaN(quantity) && !Number.isNaN(amount)) {
           items.push({
             description,
             quantity,
-            unitPrice: parseFloat(unitPrice.toFixed(2)),
+            unitPrice: Number.parseFloat(unitPrice.toFixed(2)),
             amount
           });
         }
@@ -1136,30 +1145,31 @@ function extractItemsFromText(text: string) {
         if (numberMatches && numberMatches.length >= 2) {
           // Try to determine which numbers are quantity, unit price, and amount
           // Usually, the last number is the amount
-          const amount = parseFloat(numberMatches[numberMatches.length - 1].replace(/,/g, ''));
+          const amount = Number.parseFloat(numberMatches[numberMatches.length - 1].replace(/,/g, ''));
 
           // If we have at least 3 numbers, assume format is qty, unit price, amount
-          let quantity, unitPrice;
+          let quantity;
+          let unitPrice;
           if (numberMatches.length >= 3) {
-            quantity = parseFloat(numberMatches[0].replace(/,/g, ''));
-            unitPrice = parseFloat(numberMatches[1].replace(/,/g, ''));
+            quantity = Number.parseFloat(numberMatches[0].replace(/,/g, ''));
+            unitPrice = Number.parseFloat(numberMatches[1].replace(/,/g, ''));
           } else {
             // With only 2 numbers, make best guess: first is quantity, calculate unit price
-            quantity = parseFloat(numberMatches[0].replace(/,/g, ''));
+            quantity = Number.parseFloat(numberMatches[0].replace(/,/g, ''));
             unitPrice = quantity > 0 ? amount / quantity : 0;
           }
 
           // Extract description by removing numbers and special characters
-          let description = line.replace(/\d+(?:[,.]\d+)?/g, ' ')
+          const description = line.replace(/\d+(?:[,.]\d+)?/g, ' ')
             .replace(/[$€£%]/g, ' ')
             .replace(/\s+/g, ' ')
             .trim();
 
-          if (description && !isNaN(quantity) && !isNaN(amount)) {
+          if (description && !Number.isNaN(quantity) && !Number.isNaN(amount)) {
             items.push({
               description,
               quantity,
-              unitPrice: parseFloat(unitPrice.toFixed(2)),
+              unitPrice: Number.parseFloat(unitPrice.toFixed(2)),
               amount
             });
           }
@@ -1176,9 +1186,9 @@ function extractItemsFromText(text: string) {
     while ((match = standardPattern.exec(text)) !== null) {
       items.push({
         description: match[1].trim(),
-        quantity: parseInt(match[2], 10),
-        unitPrice: parseFloat(match[3]),
-        amount: parseFloat(match[4])
+        quantity: Number.parseInt(match[2], 10),
+        unitPrice: Number.parseFloat(match[3]),
+        amount: Number.parseFloat(match[4])
       });
     }
 
@@ -1187,15 +1197,15 @@ function extractItemsFromText(text: string) {
       const alternativePattern = /(\d+)\s*(?:x)?\s*([^\n$€£]*)(?:[$€£]\s*(\d+(?:,\d+)*(?:\.\d+)?))/g;
 
       while ((match = alternativePattern.exec(text)) !== null) {
-        const quantity = parseInt(match[1], 10) || 1;
+        const quantity = Number.parseInt(match[1], 10) || 1;
         const description = match[2].trim();
-        const totalAmount = parseFloat(match[3].replace(/,/g, '')) || 0;
+        const totalAmount = Number.parseFloat(match[3].replace(/,/g, '')) || 0;
         const unitPrice = quantity > 0 ? totalAmount / quantity : 0;
 
         items.push({
           description,
           quantity,
-          unitPrice: parseFloat(unitPrice.toFixed(2)),
+          unitPrice: Number.parseFloat(unitPrice.toFixed(2)),
           amount: totalAmount
         });
       }
@@ -1215,13 +1225,13 @@ function extractItemsFromText(text: string) {
         // Look for lines with dollar amounts
         const currencyMatch = line.match(/[$€£]\s*(\d+(?:,\d+)*(?:\.\d+)?)/);
         if (currencyMatch) {
-          const amount = parseFloat(currencyMatch[1].replace(/,/g, ''));
+          const amount = Number.parseFloat(currencyMatch[1].replace(/,/g, ''));
 
           // Extract quantity if present
           let quantity = 1;
           const qtyMatch = line.match(/(\d+)\s*(?:x|items|units|qty)/i);
           if (qtyMatch) {
-            quantity = parseInt(qtyMatch[1], 10);
+            quantity = Number.parseInt(qtyMatch[1], 10);
           }
 
           // Calculate unit price
@@ -1241,7 +1251,7 @@ function extractItemsFromText(text: string) {
           items.push({
             description,
             quantity,
-            unitPrice: parseFloat(unitPrice.toFixed(2)),
+            unitPrice: Number.parseFloat(unitPrice.toFixed(2)),
             amount
           });
         }
@@ -1263,28 +1273,28 @@ function extractAmountFromText(text: string, label: string) {
   // Create an array of patterns to try, from most to least specific
   const patterns = [
     // Pattern 1: Label followed by currency symbol and amount
-    new RegExp(label + '\\s*:?\\s*[$€£]\\s*([\\d,]+(?:\\.\\d+)?)', 'i'),
+    new RegExp(`${label}\\s*:?\\s*[$€£]\\s*([\\d,]+(?:\\.\\d+)?)`, 'i'),
 
     // Pattern 2: Label followed by amount
-    new RegExp(label + '[^\\d$€£]*([\\d,]+(?:\\.\\d+)?)', 'i'),
+    new RegExp(`${label}[^\\d$€£]*([\\d,]+(?:\\.\\d+)?)`, 'i'),
 
     // Pattern 3: Label with colon or equals sign followed by amount
-    new RegExp(label + '\\s*(?::|=)\\s*([\\d,]+(?:\\.\\d+)?)', 'i'),
+    new RegExp(`${label}\\s*(?::|=)\\s*([\\d,]+(?:\\.\\d+)?)`, 'i'),
 
     // Pattern 4: Look for the label near the amount in the same line
-    new RegExp('(?:^|\\s)' + label + '(?:\\s+[^\\d$€£]*)(?:[$€£]\\s*)?([\\d,]+(?:\\.\\d+)?)', 'i'),
+    new RegExp(`(?:^|\\s)${label}(?:\\s+[^\\d$€£]*)(?:[$€£]\\s*)?([\\d,]+(?:\\.\\d+)?)`, 'i'),
 
     // Pattern 5: Look for label and then a currency amount on same line
-    new RegExp('(?:^|\\s)' + label + '.*?[$€£]\\s*([\\d,]+(?:\\.\\d+)?)', 'i')
+    new RegExp(`(?:^|\\s)${label}.*?[$€£]\\s*([\\d,]+(?:\\.\\d+)?)`, 'i')
   ];
 
   // Try each pattern in order
   for (const pattern of patterns) {
     const match = flatText.match(pattern);
-    if (match && match[1]) {
+    if (match?.[1]) {
       const amountStr = match[1].replace(/,/g, '');
-      const amount = parseFloat(amountStr);
-      if (!isNaN(amount)) {
+      const amount = Number.parseFloat(amountStr);
+      if (!Number.isNaN(amount)) {
         return amount;
       }
     }
@@ -1299,8 +1309,8 @@ function extractAmountFromText(text: string, label: string) {
       if (amounts && amounts.length > 0) {
         // Get the last amount in the line
         const lastAmount = amounts[amounts.length - 1].replace(/[$€£\s]/g, '');
-        const amount = parseFloat(lastAmount.replace(/,/g, ''));
-        if (!isNaN(amount)) {
+        const amount = Number.parseFloat(lastAmount.replace(/,/g, ''));
+        if (!Number.isNaN(amount)) {
           return amount;
         }
       }

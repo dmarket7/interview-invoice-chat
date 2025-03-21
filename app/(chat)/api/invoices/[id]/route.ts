@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { invoice, lineItem } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
@@ -23,12 +23,49 @@ interface Invoice {
   lineItems: LineItem[];
 }
 
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string; }; }
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ id: string; }>; }
 ) {
   try {
-    const invoiceId = params.id;
+    const { id: invoiceId } = await params;
+
+    // Fetch the invoice
+    const invoiceResult = await db.select().from(invoice).where(eq(invoice.id, invoiceId));
+
+    if (invoiceResult.length === 0) {
+      return NextResponse.json(
+        { error: 'Invoice not found' },
+        { status: 404 }
+      );
+    }
+
+    // Fetch line items for this invoice
+    const lineItems = await db.select().from(lineItem).where(eq(lineItem.invoiceId, invoiceId));
+
+    // Combine the data
+    const invoiceData = {
+      ...invoiceResult[0],
+      lineItems
+    };
+
+    return NextResponse.json(invoiceData);
+  } catch (error) {
+    console.error('Error fetching invoice:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch invoice' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PUT(
+  request: Request,
+  { params }: { params: Promise<{ id: string; }>; }
+) {
+  try {
+    const { id: invoiceId } = await params;
+
     const data: Invoice = await request.json();
 
     // Ensure this invoice exists

@@ -50,18 +50,12 @@ export function InvoiceUpload() {
       const data = await response.json();
 
       if (data.isInvoice && data.csvData) {
-        // Store the extracted invoice data in sessionStorage to be accessed when the chat loads
-        sessionStorage.setItem('invoice-data', JSON.stringify({
-          csvData: data.csvData,
-          invoiceData: data.extractedData,
-          fileName: file.name,
-        }));
-
-        // Clear the file after successful upload
-        setFile(null);
+        toast.success(data.message);
       } else {
         toast.error(data.message);
       }
+      // Clear the file after successful upload
+      setFile(null);
     } catch (error) {
       console.error('Error uploading invoice:', error);
       toast.error('Failed to upload invoice. Please try again.');
