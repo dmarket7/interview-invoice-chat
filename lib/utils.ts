@@ -43,11 +43,19 @@ export function getLocalStorage(key: string) {
 }
 
 export function generateUUID(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+  // Add timestamp prefix to ensure uniqueness
+  const timestamp = Date.now().toString(36);
+
+  // Additional entropy with random component
+  const randomPart = Math.random().toString(36).substring(2, 15);
+
+  // Traditional UUID pattern with timestamp prefix for uniqueness
+  return `${timestamp}-${randomPart}-${'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
     return v.toString(16);
-  });
+  })
+    }`;
 }
 
 function addToolMessageToChat({
@@ -130,7 +138,7 @@ export function convertToUIMessages(
 }
 
 type ResponseMessageWithoutId = CoreToolMessage | CoreAssistantMessage;
-type ResponseMessage = ResponseMessageWithoutId & { id: string };
+type ResponseMessage = ResponseMessageWithoutId & { id: string; };
 
 export function sanitizeResponseMessages({
   messages,

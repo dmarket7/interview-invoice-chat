@@ -129,10 +129,25 @@ export async function POST(request: Request) {
         experimental_generateMessageId: generateUUID,
         tools: {
           getWeather,
-          createDocument: createDocument({ session, dataStream }),
-          updateDocument: updateDocument({ session, dataStream }),
+          createDocument: createDocument({
+            session: {
+              ...session,
+              expires: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+            },
+            dataStream
+          }),
+          updateDocument: updateDocument({
+            session: {
+              ...session,
+              expires: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+            },
+            dataStream
+          }),
           requestSuggestions: requestSuggestions({
-            session,
+            session: {
+              ...session,
+              expires: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+            },
             dataStream,
           }),
           uploadInvoice,

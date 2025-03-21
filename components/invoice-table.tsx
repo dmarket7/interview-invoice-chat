@@ -15,7 +15,6 @@ import {
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { toast } from 'sonner';
-import { Collapsible, CollapsibleTrigger, CollapsibleContent } from './ui/collapsible';
 import { ChevronDown, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 // Define types for invoice and line item based on the database schema
@@ -281,18 +280,21 @@ export function InvoiceTable() {
       switch (sortField) {
         case 'vendorName':
           return (a.vendorName.localeCompare(b.vendorName)) * direction;
-        case 'invoiceDate':
+        case 'invoiceDate': {
           const dateA = a.invoiceDate ? new Date(a.invoiceDate).getTime() : 0;
           const dateB = b.invoiceDate ? new Date(b.invoiceDate).getTime() : 0;
           return (dateA - dateB) * direction;
-        case 'dueDate':
+        }
+        case 'dueDate': {
           const dueDateA = a.dueDate ? new Date(a.dueDate).getTime() : 0;
           const dueDateB = b.dueDate ? new Date(b.dueDate).getTime() : 0;
           return (dueDateA - dueDateB) * direction;
-        case 'amount':
+        }
+        case 'amount': {
           const amountA = a.amount || 0;
           const amountB = b.amount || 0;
           return (amountA - amountB) * direction;
+        }
         default:
           return 0;
       }
@@ -346,7 +348,7 @@ export function InvoiceTable() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-10"></TableHead>
+              <TableHead className="w-10" />
               <TableHead className="min-w-[120px]">Customer</TableHead>
               <TableHead
                 className="min-w-[120px] cursor-pointer"
