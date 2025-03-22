@@ -191,6 +191,54 @@ export async function POST(request: Request) {
           // Convert amount to cents for database storage
           const totalAmountCents = Math.round(extractedData.total * 100);
 
+          // Check for duplicate invoice before saving
+          try {
+            console.log('Checking for duplicate invoice...');
+            const duplicateCheckResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/invoices/check-duplicate`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                // Pass auth token to ensure the request is authorized
+                'Cookie': request.headers.get('cookie') || ''
+              },
+              body: JSON.stringify({
+                invoiceNumber: extractedData.invoiceNumber,
+                vendor: extractedData.vendor,
+                total: extractedData.total
+              })
+            });
+
+            const duplicateCheck = await duplicateCheckResponse.json();
+
+            if (duplicateCheck.isDuplicate) {
+              console.log(`Duplicate invoice found: ${extractedData.invoiceNumber} from ${extractedData.vendor} for ${extractedData.total}`);
+
+              // Convert the extracted data to CSV format for sheet block (still needed for UI)
+              const csvData = convertToCSV(extractedData);
+
+              // Get the base URL from environment variables or use an empty string as fallback
+              const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
+
+              // Return response indicating duplicate
+              return NextResponse.json({
+                isDuplicate: true,
+                duplicateInvoice: duplicateCheck.invoice,
+                url: `${BASE_URL}/api/invoices/${duplicateCheck.invoice.id}`,
+                pathname: `/uploads/${uniqueFilename}`,
+                contentType: file.type,
+                isInvoice: true,
+                invoiceId: duplicateCheck.invoice.id,
+                extractedData: extractedData,
+                csvData: csvData,
+                documentTitle: `Invoice: ${extractedData.invoiceNumber || uniqueFilename}`,
+                message: `This invoice has already been processed. An invoice with the same invoice number (${extractedData.invoiceNumber}), vendor (${extractedData.vendor}), and amount (${extractedData.total}) already exists in the system.`
+              });
+            }
+          } catch (duplicateError) {
+            console.error('Error checking for duplicate invoice:', duplicateError);
+            // Continue with processing even if duplicate check fails
+          }
+
           // Generate unique ID for invoice
           const invoiceId = nanoid();
 
