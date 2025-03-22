@@ -102,8 +102,8 @@ export const uploadInvoice = tool({
         apiUrl = window.location.origin + '/api/files/upload/process';
       } else {
         // For server-side
-        apiUrl = process.env.NEXT_PUBLIC_APP_URL
-          ? `${process.env.NEXT_PUBLIC_APP_URL}/api/files/upload/process`
+        apiUrl = process.env.NEXT_PUBLIC_BASE_URL
+          ? `${process.env.NEXT_PUBLIC_BASE_URL}/api/files/upload/process`
           : 'http://localhost:3000/api/files/upload/process';
       }
 
@@ -274,8 +274,8 @@ async function fetchInvoiceById(invoiceId: string) {
     if (typeof window !== 'undefined') {
       apiUrl = `${window.location.origin}/api/invoices/${invoiceId}`;
     } else {
-      apiUrl = process.env.NEXT_PUBLIC_APP_URL
-        ? `${process.env.NEXT_PUBLIC_APP_URL}/api/invoices/${invoiceId}`
+      apiUrl = process.env.NEXT_PUBLIC_BASE_URL
+        ? `${process.env.NEXT_PUBLIC_BASE_URL}/api/invoices/${invoiceId}`
         : `http://localhost:3000/api/invoices/${invoiceId}`;
     }
 
