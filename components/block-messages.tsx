@@ -2,8 +2,9 @@ import { PreviewMessage } from './message';
 import { useScrollToBottom } from './use-scroll-to-bottom';
 import type { Vote } from '@/lib/db/schema';
 import type { ChatRequestOptions, Message } from 'ai';
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import equal from 'fast-deep-equal';
+import { filterToolMessages } from '@/lib/utils';
 import type { UIBlock } from './block';
 
 interface BlockMessagesProps {
@@ -33,17 +34,22 @@ function PureBlockMessages({
   const [messagesContainerRef, messagesEndRef] =
     useScrollToBottom<HTMLDivElement>();
 
+  // Filter out tool-related messages before displaying
+  const filteredMessages = useMemo(() => {
+    return filterToolMessages(messages);
+  }, [messages]);
+
   return (
     <div
       ref={messagesContainerRef}
       className="flex flex-col gap-4 h-full items-center overflow-y-scroll px-4 pt-20"
     >
-      {messages.map((message, index) => (
+      {filteredMessages.map((message, index) => (
         <PreviewMessage
           chatId={chatId}
           key={message.id}
           message={message}
-          isLoading={isLoading && index === messages.length - 1}
+          isLoading={isLoading && index === filteredMessages.length - 1}
           vote={
             votes
               ? votes.find((vote) => vote.messageId === message.id)

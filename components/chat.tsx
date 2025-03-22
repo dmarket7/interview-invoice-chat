@@ -2,12 +2,12 @@
 
 import type { Attachment, Message } from 'ai';
 import { useChat } from 'ai/react';
-import { useState, useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 
 import { ChatHeader } from '@/components/chat-header';
 import type { Vote } from '@/lib/db/schema';
-import { fetcher, generateUUID } from '@/lib/utils';
+import { fetcher, generateUUID, filterToolMessages } from '@/lib/utils';
 import { useLastUploadedInvoice } from '@/lib/hooks/use-last-uploaded-invoice';
 
 import { Block } from './block';
@@ -59,8 +59,8 @@ export function Chat({
     },
   });
 
-  // Filter out system messages for display
-  const messages = allMessages.filter(msg => msg.role !== 'system');
+  // Filter out system and tool-related messages for display
+  const messages = filterToolMessages(allMessages);
 
   const { data: votes } = useSWR<Array<Vote>>(
     `/api/vote?chatId=${id}`,

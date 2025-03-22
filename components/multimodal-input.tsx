@@ -329,9 +329,7 @@ INVOICE DETAILS:
 - Customer: ${data.extractedData?.customer || 'unknown customer'}
 - Total: ${data.extractedData?.total || 'unknown amount'}
 - Invoice Number: ${data.extractedData?.invoiceNumber || 'unknown'}
-- Date: ${data.extractedData?.date || 'unknown'}
-
-Please analyze this invoice data using the uploadInvoice tool. The correct filename parameter to use is exactly: "${pathname}"`,
+- Date: ${data.extractedData?.date || 'unknown'}`,
                 skipAttachment: true
               };
             }

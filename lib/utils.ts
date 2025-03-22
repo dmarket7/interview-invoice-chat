@@ -235,3 +235,34 @@ export function getDocumentTimestampByIndex(
 
   return documents[index].createdAt;
 }
+
+// This is a utility function to filter out tool-related messages
+export function filterToolMessages(messages: Array<Message>): Array<Message> {
+  return messages.filter(msg => {
+    // Create an array of roles that should be hidden from the user
+    const hiddenRoles = ['system', 'tool-call', 'tool-result', 'function', 'data'];
+
+    // First check if the role should be hidden
+    if (hiddenRoles.includes(msg.role as string)) {
+      return false;
+    }
+
+    // Then check if the message has tool invocations
+    if (msg.toolInvocations && msg.toolInvocations.length > 0) {
+      return false;
+    }
+
+    // Then check if the content contains tool-related data
+    if (Array.isArray(msg.content)) {
+      // Check if any item in the content array is a tool call or tool result
+      return !msg.content.some(item =>
+        item.type === 'tool-call' ||
+        item.type === 'tool-result' ||
+        item.type === 'function'
+      );
+    }
+
+    // Keep messages with regular string content
+    return true;
+  });
+}
