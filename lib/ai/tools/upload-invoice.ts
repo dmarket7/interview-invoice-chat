@@ -33,18 +33,6 @@ export const uploadInvoice = tool({
 
       // Handle both formats: just filename or full path with /uploads/ prefix
       let cleanedFilename = filename;
-      if (!cleanedFilename.startsWith('/uploads/')) {
-        // Check if it's stored in localStorage
-        if (typeof window !== 'undefined') {
-          const storedFilename = localStorage.getItem('lastUploadedInvoiceFilename');
-          if (storedFilename) {
-            console.log(`Found stored filename: ${storedFilename}`);
-            cleanedFilename = storedFilename;
-          } else {
-            console.log('No stored filename found, using as-is');
-          }
-        }
-      }
 
       // Extract a file ID that can be used for database lookup
       let fileId = '';
@@ -54,17 +42,8 @@ export const uploadInvoice = tool({
       if (timestampMatch?.[1]) {
         fileId = timestampMatch[1];
         console.log(`Extracted fileId from timestamp: ${fileId}`);
-      }
-      // If that fails, try to use the provided invoice ID from localStorage
-      else if (typeof window !== 'undefined') {
-        const storedId = localStorage.getItem('lastUploadedInvoiceId');
-        if (storedId) {
-          fileId = storedId;
-          console.log(`Using stored invoiceId as fileId: ${fileId}`);
-        }
-      }
-      // Last resort, use the first part of the filename
-      if (!fileId) {
+      } else {
+        // Last resort, use the first part of the filename
         const parts = cleanedFilename.split('/').pop()?.split('-') || [];
         fileId = parts[0] || '';
         console.log(`Using first part of filename as fileId: ${fileId}`);
@@ -72,68 +51,31 @@ export const uploadInvoice = tool({
 
       console.log(`Final fileId: ${fileId}`);
 
-      // First, try to get the invoice data from localStorage before making API call
-      if (typeof window !== 'undefined') {
-        const storedId = localStorage.getItem('lastUploadedInvoiceId');
-        if (storedId) {
-          console.log(`Found stored invoice ID: ${storedId}`);
-
-          // If we have a stored invoice in localStorage with complete data, use that
-          const storedInvoiceDataString = localStorage.getItem(`invoice_data_${storedId}`);
-          if (storedInvoiceDataString) {
-            try {
-              const storedInvoiceData = JSON.parse(storedInvoiceDataString);
-              console.log('Using stored invoice data from localStorage');
-
-              // If we have complete data, return it directly without trying API call
-              if (storedInvoiceData?.vendor &&
-                storedInvoiceData.total) {
-
-                // Use additional fallback fields if available
-                const vendor = storedInvoiceData.vendor || localStorage.getItem('lastInvoiceVendor') || 'Unknown vendor';
-                const customer = storedInvoiceData.customer || localStorage.getItem('lastInvoiceCustomer') || 'Unknown customer';
-                const total = storedInvoiceData.total || Number.parseFloat(localStorage.getItem('lastInvoiceTotal') || "0");
-                const invoiceNumber = storedInvoiceData.invoiceNumber || localStorage.getItem('lastInvoiceNumber') || 'Unknown';
-
-                return {
-                  success: true,
-                  invoiceNumber: invoiceNumber,
-                  invoiceId: storedId,
-                  vendor: vendor,
-                  customer: customer,
-                  date: storedInvoiceData.date || '',
-                  dueDate: storedInvoiceData.dueDate || '',
-                  total: total,
-                  lineItemCount: storedInvoiceData.items?.length || 0,
-                  items: storedInvoiceData.items || [],
-                  message: "Invoice data retrieved successfully."
-                };
-              }
-            } catch (storageError) {
-              console.error('Error parsing stored invoice data:', storageError);
-              // Continue with alternative localStorage fallbacks
-            }
-          }
-
-          // If we don't have complete data but have bits in localStorage
-          const vendor = localStorage.getItem('lastInvoiceVendor');
-          const customer = localStorage.getItem('lastInvoiceCustomer');
-          const total = localStorage.getItem('lastInvoiceTotal');
-          const invoiceNumber = localStorage.getItem('lastInvoiceNumber');
-          const date = localStorage.getItem('lastInvoiceDate');
-
-          if (vendor || total) {
+      // Try to fetch the invoice from API first if we have an ID from the filename
+      if (fileId) {
+        try {
+          const invoiceData = await fetchInvoiceById(fileId);
+          if (invoiceData) {
+            console.log('Successfully retrieved invoice from API');
             return {
-              success: true,
-              invoiceNumber: invoiceNumber || "Retrieved from upload",
-              invoiceId: storedId,
-              vendor: vendor || "Unknown vendor",
-              customer: customer || "Unknown customer",
-              date: date || "",
-              total: Number.parseFloat(total || "0"),
-              message: "Invoice data retrieved successfully."
+              message: "Invoice data retrieved successfully.",
+              _metadata: {
+                success: true,
+                invoiceNumber: invoiceData.invoiceNumber,
+                invoiceId: invoiceData.id,
+                vendor: invoiceData.vendor,
+                customer: invoiceData.customer,
+                date: invoiceData.date,
+                dueDate: invoiceData.dueDate,
+                total: invoiceData.total,
+                lineItemCount: invoiceData.items?.length || 0,
+                items: invoiceData.items || []
+              }
             };
           }
+        } catch (error) {
+          console.log('Error fetching invoice by ID:', error);
+          // Continue with processing logic if the API fetch fails
         }
       }
 
@@ -180,91 +122,47 @@ export const uploadInvoice = tool({
           const errorData = await response.json();
           console.error('Invoice processing API error:', errorData);
 
-          // Instead of returning an error, try localStorage fallbacks
-          if (typeof window !== 'undefined') {
-            const storedId = localStorage.getItem('lastUploadedInvoiceId');
-            if (storedId) {
-              const vendor = localStorage.getItem('lastInvoiceVendor');
-              const customer = localStorage.getItem('lastInvoiceCustomer');
-              const total = localStorage.getItem('lastInvoiceTotal');
-              const invoiceNumber = localStorage.getItem('lastInvoiceNumber');
-              const date = localStorage.getItem('lastInvoiceDate');
-
-              if (vendor || total) {
-                return {
-                  success: true,
-                  invoiceNumber: invoiceNumber || "Retrieved from upload",
-                  invoiceId: storedId,
-                  vendor: vendor || "Amazon Web Services",
-                  customer: customer || "ViveLabs Limited",
-                  date: date || "",
-                  total: Number.parseFloat(total || "0"),
-                  message: "Invoice data retrieved successfully."
-                };
-              }
-            }
-          }
-
           // Check if this is a validation issue (e.g., document is a statement, not an invoice)
           if (errorData.isStatement) {
             return {
-              success: false,
-              isStatement: true,
-              message: errorData.message || "The document appears to be a statement or receipt, not an invoice.",
-              recommendation: "Please upload a valid invoice document. Account statements, receipts, and other financial documents are not supported."
+              message: "The document appears to be a statement or receipt, not an invoice. Please upload a valid invoice document.",
+              _metadata: {
+                success: false,
+                isStatement: true,
+                recommendation: "Please upload a valid invoice document. Account statements, receipts, and other financial documents are not supported."
+              }
             };
           }
 
           // Handle common API errors with specific messages
           if (errorData.error === 'No invoice found in database') {
-            // Instead of returning an error, provide a more helpful response with any data we have
-            if (typeof window !== 'undefined') {
-              const storedId = localStorage.getItem('lastUploadedInvoiceId');
-              if (storedId) {
-                const vendor = localStorage.getItem('lastInvoiceVendor');
-                const customer = localStorage.getItem('lastInvoiceCustomer');
-                const total = localStorage.getItem('lastInvoiceTotal');
-                const invoiceNumber = localStorage.getItem('lastInvoiceNumber');
-
-                // If we have some data, return it as a success
-                if (vendor || invoiceNumber || total) {
-                  return {
-                    success: true,
-                    invoiceNumber: invoiceNumber || "Processing",
-                    invoiceId: storedId,
-                    vendor: vendor || "Processing",
-                    customer: customer || "Processing",
-                    date: new Date().toISOString().split('T')[0],
-                    total: Number.parseFloat(total || "0"),
-                    message: "Invoice data retrieved. Still processing all details."
-                  };
-                }
-              }
-            }
-
-            // If we don't have any data, return a more user-friendly processing status instead of an error
+            // Return a more user-friendly processing status instead of an error
             return {
+              message: "Your invoice is being processed. This may take a moment.",
+              _metadata: {
+                success: true,
+                invoiceNumber: "Processing",
+                invoiceId: fileId || "pending",
+                vendor: "Processing",
+                customer: "Processing",
+                date: new Date().toISOString().split('T')[0],
+                total: 0
+              }
+            };
+          }
+
+          // Handle other errors as successful processing to avoid confusing the user
+          return {
+            message: "Your invoice is being processed. This may take a moment.",
+            _metadata: {
               success: true,
               invoiceNumber: "Processing",
               invoiceId: fileId || "pending",
               vendor: "Processing",
               customer: "Processing",
               date: new Date().toISOString().split('T')[0],
-              total: 0,
-              message: "Your invoice is being processed. This may take a moment."
-            };
-          }
-
-          // Handle other errors as successful processing to avoid confusing the user
-          return {
-            success: true,
-            invoiceNumber: "Processing",
-            invoiceId: fileId || "pending",
-            vendor: "Processing",
-            customer: "Processing",
-            date: new Date().toISOString().split('T')[0],
-            total: 0,
-            message: "Your invoice is being processed. This may take a moment."
+              total: 0
+            }
           };
         }
 
@@ -272,65 +170,62 @@ export const uploadInvoice = tool({
         const data = await response.json();
         console.log('Successfully processed invoice data');
 
-        // Store the invoice data in localStorage for future use
-        if (data.extractedData && typeof window !== 'undefined') {
-          const invoiceId = data.extractedData.invoiceId || fileId;
-          localStorage.setItem(`invoice_data_${invoiceId}`, JSON.stringify(data.extractedData));
-        }
+        // Get the invoice ID from the response
+        const invoiceId = data.extractedData?.invoiceId || fileId;
 
-        // If there's already a stored ID, try to use it from localStorage
-        let invoiceId = data.extractedData?.invoiceId;
-        if (!invoiceId && typeof window !== 'undefined') {
-          const storedId = localStorage.getItem('lastUploadedInvoiceId');
-          if (storedId) {
-            console.log(`Using stored invoiceId: ${storedId}`);
-            invoiceId = storedId;
+        // If we have an invoice ID, try to fetch full details from the API
+        if (invoiceId) {
+          try {
+            const invoiceData = await fetchInvoiceById(invoiceId);
+            if (invoiceData) {
+              return {
+                message: "Invoice processed successfully. The data has been extracted and saved to the database.",
+                _metadata: {
+                  success: true,
+                  invoiceNumber: invoiceData.invoiceNumber,
+                  invoiceId: invoiceData.id,
+                  vendor: invoiceData.vendor,
+                  customer: invoiceData.customer,
+                  date: invoiceData.date,
+                  dueDate: invoiceData.dueDate,
+                  total: invoiceData.total,
+                  lineItemCount: invoiceData.items?.length || 0,
+                  items: invoiceData.items || []
+                }
+              };
+            }
+          } catch (error) {
+            console.log('Error fetching invoice by ID after processing:', error);
+            // Fall back to the extracted data if API fetch fails
           }
         }
 
+        // Use the data from the processing response if API fetch failed
         return {
-          success: true,
-          invoiceNumber: data.extractedData?.invoiceNumber,
-          invoiceId: invoiceId,
-          vendor: data.extractedData?.vendor,
-          customer: data.extractedData?.customer,
-          date: data.extractedData?.date,
-          dueDate: data.extractedData?.dueDate,
-          total: data.extractedData?.total,
-          lineItemCount: data.extractedData?.items?.length || 0,
-          items: data.extractedData?.items || [],
-          message: "Invoice processed successfully. The data has been extracted and saved to the database."
+          message: "Invoice processed successfully. The data has been extracted and saved to the database.",
+          _metadata: {
+            success: true,
+            invoiceNumber: data.extractedData?.invoiceNumber,
+            invoiceId: invoiceId,
+            vendor: data.extractedData?.vendor,
+            customer: data.extractedData?.customer,
+            date: data.extractedData?.date,
+            dueDate: data.extractedData?.dueDate,
+            total: data.extractedData?.total,
+            lineItemCount: data.extractedData?.items?.length || 0,
+            items: data.extractedData?.items || []
+          }
         };
       } catch (fetchError) {
         console.error('Fetch error in uploadInvoice tool:', fetchError);
 
-        // Fallback to a successful response using data from local storage
-        if (typeof window !== 'undefined') {
-          const storedId = localStorage.getItem('lastUploadedInvoiceId');
-          if (storedId) {
-            const vendor = localStorage.getItem('lastInvoiceVendor');
-            const customer = localStorage.getItem('lastInvoiceCustomer');
-            const total = localStorage.getItem('lastInvoiceTotal');
-            const invoiceNumber = localStorage.getItem('lastInvoiceNumber');
-            const date = localStorage.getItem('lastInvoiceDate');
-
-            return {
-              success: true,
-              invoiceNumber: invoiceNumber || "Retrieved from upload",
-              invoiceId: storedId,
-              vendor: vendor || "Amazon Web Services",
-              customer: customer || "ViveLabs Limited",
-              date: date || "",
-              total: Number.parseFloat(total || "0"),
-              message: "Invoice data retrieved successfully."
-            };
-          }
-        }
-
         return {
-          success: false,
-          error: 'Failed to connect to invoice processing API',
-          details: fetchError instanceof Error ? fetchError.message : String(fetchError)
+          message: "Failed to connect to invoice processing API.",
+          _metadata: {
+            success: false,
+            error: 'Failed to connect to invoice processing API',
+            details: fetchError instanceof Error ? fetchError.message : String(fetchError)
+          }
         };
       }
     } catch (error) {
@@ -340,50 +235,68 @@ export const uploadInvoice = tool({
 
       // Handle the case where the invoice hasn't been processed yet
       if (errorMessage.includes("No invoice found in database")) {
-        // Try to get data from localStorage
-        let fallbackData: any = {};
-
-        if (typeof window !== 'undefined') {
-          const invoiceId = localStorage.getItem('lastUploadedInvoiceId') || '';
-          const vendor = localStorage.getItem('lastInvoiceVendor') || '';
-          const customer = localStorage.getItem('lastInvoiceCustomer') || '';
-          const total = localStorage.getItem('lastInvoiceTotal') || '';
-          const invoiceNumber = localStorage.getItem('lastInvoiceNumber') || '';
-          const invoiceDate = localStorage.getItem('lastInvoiceDate') || '';
-
-          if (invoiceId || vendor || total || invoiceNumber) {
-            fallbackData = {
-              id: invoiceId,
-              vendorName: vendor,
-              customerName: customer,
-              total: total,
-              invoiceNumber: invoiceNumber,
-              invoiceDate: invoiceDate
-            };
-
-            return {
-              success: true,
-              message: "Your invoice data is still being processed. Here's what I've extracted so far:",
-              data: fallbackData
-            };
-          }
-        }
-
-        // If we don't have any data, return a processing message
         return {
-          success: true, // Send success to prevent showing error
           message: "I'm still processing your invoice. This may take a few moments...",
-          data: { processing: true }
+          _metadata: {
+            success: true, // Send success to prevent showing error
+            data: { processing: true }
+          }
         };
       }
 
       // For any other error, still return a success with a processing message
       // to avoid showing technical errors to the user
       return {
-        success: true, // Send success to prevent showing error
         message: "I'm currently analyzing your invoice. Please give me a moment to process it...",
-        data: { processing: true }
+        _metadata: {
+          success: true, // Send success to prevent showing error
+          data: { processing: true }
+        }
       };
     }
   },
 });
+
+/**
+ * Fetches invoice data from the API using the invoice ID
+ * @param invoiceId The ID of the invoice to fetch
+ * @returns The invoice data or null if not found
+ */
+async function fetchInvoiceById(invoiceId: string) {
+  try {
+    if (!invoiceId) {
+      console.log('No invoice ID provided for fetch');
+      return null;
+    }
+
+    // Construct the API URL
+    let apiUrl: string;
+    if (typeof window !== 'undefined') {
+      apiUrl = `${window.location.origin}/api/invoices/${invoiceId}`;
+    } else {
+      apiUrl = process.env.NEXT_PUBLIC_APP_URL
+        ? `${process.env.NEXT_PUBLIC_APP_URL}/api/invoices/${invoiceId}`
+        : `http://localhost:3000/api/invoices/${invoiceId}`;
+    }
+
+    console.log(`Fetching invoice data from API: ${apiUrl}`);
+
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      console.log(`API returned error status: ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+    return data.invoice || null;
+  } catch (error) {
+    console.error('Error fetching invoice:', error);
+    return null;
+  }
+}

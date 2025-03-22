@@ -2,7 +2,7 @@
 
 import type { Attachment, Message } from 'ai';
 import { useChat } from 'ai/react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 
 import { ChatHeader } from '@/components/chat-header';
@@ -31,6 +31,8 @@ export function Chat({
   const { mutate } = useSWRConfig();
   const lastUploadedInvoice = useLastUploadedInvoice();
   const systemMessageSentRef = useRef(false);
+  const [currentInvoiceId, setCurrentInvoiceId] = useState<string | null>(null);
+  const [currentInvoiceFilename, setCurrentInvoiceFilename] = useState<string | null>(null);
 
   const {
     messages: allMessages,
@@ -96,9 +98,7 @@ export function Chat({
           if (typeof attachmentName === 'string') {
             uploadFilename = attachmentName;
             // Store it for processing
-            if (typeof window !== 'undefined') {
-              localStorage.setItem('lastUploadedInvoiceFilename', uploadFilename);
-            }
+            setCurrentInvoiceFilename(uploadFilename);
           }
         }
       }
@@ -110,27 +110,28 @@ export function Chat({
       const filenameMatch = lastMessage.content.match(/filename parameter exactly as: "([^"]+)"/);
       if (filenameMatch?.[1]) {
         uploadFilename = filenameMatch[1];
+        setCurrentInvoiceFilename(uploadFilename);
       }
 
       // 2. Look for quoted filename pattern
       const quotedFilenameMatch = lastMessage.content.match(/filename(?:.*?)"([^"]+\.pdf)"/);
       if (!uploadFilename && quotedFilenameMatch && quotedFilenameMatch[1]) {
         uploadFilename = quotedFilenameMatch[1];
+        setCurrentInvoiceFilename(uploadFilename);
       }
 
       // 3. Look for /uploads/ pattern
       const uploadsMatch = lastMessage.content.match(/(\/uploads\/[^"\s]+\.pdf)/);
       if (!uploadFilename && uploadsMatch && uploadsMatch[1]) {
         uploadFilename = uploadsMatch[1];
+        setCurrentInvoiceFilename(uploadFilename);
       }
 
       // 4. Look for invoice ID
       const invoiceIdMatch = lastMessage.content.match(/ID: ([a-zA-Z0-9_-]+)/);
       if (invoiceIdMatch?.[1]) {
         invoiceId = invoiceIdMatch[1];
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('lastUploadedInvoiceId', invoiceId);
-        }
+        setCurrentInvoiceId(invoiceId);
       }
     }
 
@@ -147,9 +148,8 @@ export function Chat({
 2. DO NOT ask them to upload an invoice - they already have.
 3. After processing, analyze the invoice data and provide insights.
 4. If you encounter an error, try again with the ID directly: "${invoiceId || ''}"
-5. If the API fails, the tool will still retrieve data from localStorage. ALWAYS present the available data as a success, not a failure.
-6. This system message is invisible to the user - they should only see your response to processing their invoice.
-7. NEVER show error messages or raw JSON to the user. If there's an error, say "I'm processing your invoice..." and try again.`
+5. This system message is invisible to the user - they should only see your response to processing their invoice.
+6. NEVER show error messages or raw JSON to the user. If there's an error, say "I'm processing your invoice..." and try again.`
         });
       }, 100);
     } else if (!systemMessageSentRef.current &&
@@ -166,9 +166,8 @@ export function Chat({
 2. DO NOT ask them to upload an invoice - they already have.
 3. After processing, analyze the invoice data and provide insights.
 4. If you encounter an error, try again with the ID directly: "${lastUploadedInvoice.invoiceId || ''}"
-5. If the API fails, the tool will still retrieve data from localStorage. ALWAYS present the available data as a success, not a failure.
-6. This system message is invisible to the user - they should only see your response to processing their invoice.
-7. NEVER show error messages or raw JSON to the user. If there's an error, say "I'm processing your invoice..." and try again.`
+5. This system message is invisible to the user - they should only see your response to processing their invoice.
+6. NEVER show error messages or raw JSON to the user. If there's an error, say "I'm processing your invoice..." and try again.`
       });
     }
   }, [allMessages, append, lastUploadedInvoice, initialMessages.length]);
@@ -207,6 +206,10 @@ export function Chat({
             messages={messages}
             setMessages={setMessages}
             append={append}
+            currentInvoiceId={currentInvoiceId}
+            setCurrentInvoiceId={setCurrentInvoiceId}
+            currentInvoiceFilename={currentInvoiceFilename}
+            setCurrentInvoiceFilename={setCurrentInvoiceFilename}
           />
         </form>
       </div>

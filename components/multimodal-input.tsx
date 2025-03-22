@@ -44,6 +44,10 @@ function PureMultimodalInput({
   append,
   handleSubmit,
   className,
+  currentInvoiceId,
+  setCurrentInvoiceId,
+  currentInvoiceFilename,
+  setCurrentInvoiceFilename,
 }: {
   chatId: string;
   input: string;
@@ -65,6 +69,10 @@ function PureMultimodalInput({
     chatRequestOptions?: ChatRequestOptions,
   ) => void;
   className?: string;
+  currentInvoiceId: string | null;
+  setCurrentInvoiceId: Dispatch<SetStateAction<string | null>>;
+  currentInvoiceFilename: string | null;
+  setCurrentInvoiceFilename: Dispatch<SetStateAction<string | null>>;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -286,20 +294,10 @@ function PureMultimodalInput({
           // For invoices, we already have structured data processing
           if (data.isInvoice && data.csvData) {
             // Store invoice information for later use by the agent
-            if (typeof window !== 'undefined') {
-              console.log('Storing invoice data in localStorage:', data.invoiceId);
-              localStorage.setItem('lastUploadedInvoiceId', data.invoiceId);
-              localStorage.setItem('lastUploadedInvoiceFilename', pathname);
-
-              // Store additional metadata for fallback retrieval
-              if (data.extractedData) {
-                localStorage.setItem('lastInvoiceVendor', data.extractedData.vendor || 'Unknown');
-                localStorage.setItem('lastInvoiceCustomer', data.extractedData.customer || 'Unknown');
-                localStorage.setItem('lastInvoiceTotal', data.extractedData.total?.toString() || '0');
-                localStorage.setItem('lastInvoiceNumber', data.extractedData.invoiceNumber || 'Unknown');
-                localStorage.setItem('lastInvoiceDate', data.extractedData.date || '');
-                localStorage.setItem(`invoice_data_${data.invoiceId}`, JSON.stringify(data.extractedData));
-              }
+            if (data.invoiceId) {
+              console.log('Setting invoice data:', data.invoiceId);
+              setCurrentInvoiceId(data.invoiceId);
+              setCurrentInvoiceFilename(pathname);
 
               // Show a toast to inform the user
               toast.success('Invoice uploaded successfully! The AI will process it automatically.');
@@ -316,9 +314,9 @@ function PureMultimodalInput({
               // Show success toast instead of appending a message
               toast.success(`Invoice processed successfully with ID: ${data.invoiceId}`);
 
-              // Store filename in local storage for the agent to use
-              localStorage.setItem('lastUploadedInvoiceFilename', pathname);
-              localStorage.setItem('lastUploadedInvoiceId', data.invoiceId);
+              // Store invoice ID and filename for the agent to use
+              setCurrentInvoiceId(data.invoiceId);
+              setCurrentInvoiceFilename(pathname);
 
               // Return an explicit message that makes it clear to the AI that
               // an invoice has already been processed and is ready for analysis
@@ -362,7 +360,7 @@ Please analyze this invoice data using the uploadInvoice tool. The correct filen
           if (data.extractedText) {
             // Return a text modification instead of an attachment
             const timestamp = Date.now();
-            localStorage.setItem('lastUploadedPDFFilename', pathname);
+            setCurrentInvoiceFilename(pathname);
 
             return {
               textModification: `\n\nI've uploaded a PDF document: "${file.name}" with filename "${pathname}". The document contains extracted text. Please analyze this document and provide insights.`,
@@ -534,6 +532,8 @@ export const MultimodalInput = memo(
     if (prevProps.input !== nextProps.input) return false;
     if (prevProps.isLoading !== nextProps.isLoading) return false;
     if (!equal(prevProps.attachments, nextProps.attachments)) return false;
+    if (prevProps.currentInvoiceId !== nextProps.currentInvoiceId) return false;
+    if (prevProps.currentInvoiceFilename !== nextProps.currentInvoiceFilename) return false;
 
     return true;
   },
