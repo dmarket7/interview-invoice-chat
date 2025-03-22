@@ -63,8 +63,12 @@ export async function POST(request: Request) {
             ? (formData.get('file') as File).name
             : 'unknown-file';
 
+          const dataURL = `data:${file.type};base64,${buffer.toString('base64')}`;
+
           // Return a successful response but with isStatement flag instead of an error
           return NextResponse.json({
+            url: dataURL,
+            contentType: file.type,
             isStatement: true,
             message: "This document appears to be an account statement or receipt, not an invoice.",
             details: "Please upload a valid invoice document. Account statements, receipts, and other financial documents are not supported.",
@@ -94,11 +98,14 @@ export async function POST(request: Request) {
         try {
           const extractedData = await extractInvoiceData(buffer);
           console.log('Successfully extracted invoice data');
+          const dataURL = `data:${file.type};base64,${buffer.toString('base64')}`;
 
           // Validate that this is actually an invoice document
           const isInvoice = validateIsInvoice(extractedData);
           if (!isInvoice) {
             return NextResponse.json({
+              url: dataURL,
+              contentType: file.type,
               isStatement: true,
               message: "The uploaded document doesn't appear to be an invoice. Please upload a valid invoice document.",
               details: "We couldn't find key invoice information such as invoice number, line items, or total amount.",
