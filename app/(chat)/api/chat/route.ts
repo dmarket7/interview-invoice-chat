@@ -44,8 +44,6 @@ interface AttachmentContent {
   };
 }
 
-type MessageContentPart = TextContent | AttachmentContent;
-
 export async function POST(request: Request) {
   const {
     id,
@@ -54,36 +52,6 @@ export async function POST(request: Request) {
   }: { id: string; messages: Array<Message>; selectedChatModel: string; } =
     await request.json();
 
-  // Debug attachment data
-  const lastMessage = messages[messages.length - 1];
-  console.log('DEBUG - Last message content type:', typeof lastMessage.content);
-
-  if (typeof lastMessage.content === 'object') {
-    console.log('DEBUG - Last message has multipart content structure');
-    const parts = lastMessage.content as Array<MessageContentPart>;
-
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      console.log(`DEBUG - Content part ${i} type:`, part.type);
-
-      if (part.type === 'attachment') {
-        console.log(`DEBUG - Attachment found:`, JSON.stringify({
-          mime: part.attachment.content_type,
-          name: part.attachment.name
-        }));
-
-        // Check if PDF and convert to text if needed
-        if (part.attachment.content_type === 'application/pdf') {
-          console.log('DEBUG - PDF attachment detected - converting to text format');
-          // Convert PDF reference to text description
-          parts[i] = {
-            type: 'text',
-            text: `[PDF Document: ${part.attachment.name}] - The content has been processed as text.`
-          } as MessageContentPart;
-        }
-      }
-    }
-  }
 
   const session = await auth();
 
