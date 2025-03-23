@@ -13,6 +13,8 @@ import {
   SidebarFooter,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
   useSidebar,
 } from '@/components/ui/sidebar';
 import Link from 'next/link';
@@ -56,29 +58,17 @@ export function AppSidebar({ user }: { user: User | undefined; }) {
               <TooltipContent align="end">New Chat</TooltipContent>
             </Tooltip>
           </div>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild>
+              <Link href="/invoices">
+                <FileIcon size={16} />
+                Process Invoices
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        {user && (
-          <div className="my-6 px-4">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start"
-                  onClick={() => {
-                    setOpenMobile(false);
-                    router.push('/invoices');
-                  }}
-                >
-                  <FileIcon size={16} />
-                  <span className="ml-2">Process Invoices</span>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent align="center">Upload and process PDF invoices</TooltipContent>
-            </Tooltip>
-          </div>
-        )}
         <SidebarHistory user={user} />
       </SidebarContent>
       <SidebarFooter>{user && <SidebarUserNav user={user} />}</SidebarFooter>
