@@ -219,7 +219,7 @@ export async function POST(request: Request) {
               const csvData = convertToCSV(extractedData);
 
               // Get the base URL from environment variables or use an empty string as fallback
-              const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
+              const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
 
               // Return response indicating duplicate
               return NextResponse.json({
@@ -283,7 +283,7 @@ export async function POST(request: Request) {
           const csvData = convertToCSV(extractedData);
 
           // Get the base URL from environment variables or use an empty string as fallback
-          const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
+          const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
 
           // Ensure extractedText is defined
           const extractedText = extractedData.extractionMethods ?
