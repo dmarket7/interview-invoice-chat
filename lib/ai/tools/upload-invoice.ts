@@ -29,8 +29,6 @@ export const uploadInvoice = tool({
   }),
   execute: async ({ filename, purpose }) => {
     try {
-      console.log(`Executing uploadInvoice tool with filename: ${filename}`);
-
       // Handle both formats: just filename or full path with /uploads/ prefix
       let cleanedFilename = filename;
 
@@ -41,22 +39,18 @@ export const uploadInvoice = tool({
       const timestampMatch = cleanedFilename.match(/\/uploads\/(\d+)-/);
       if (timestampMatch?.[1]) {
         fileId = timestampMatch[1];
-        console.log(`Extracted fileId from timestamp: ${fileId}`);
       } else {
         // Last resort, use the first part of the filename
         const parts = cleanedFilename.split('/').pop()?.split('-') || [];
         fileId = parts[0] || '';
-        console.log(`Using first part of filename as fileId: ${fileId}`);
       }
 
-      console.log(`Final fileId: ${fileId}`);
 
       // Try to fetch the invoice from API first if we have an ID from the filename
       if (fileId) {
         try {
           const invoiceData = await fetchInvoiceById(fileId);
           if (invoiceData) {
-            console.log('Successfully retrieved invoice from API');
             return {
               message: "Invoice data retrieved successfully.",
               _metadata: {
@@ -107,16 +101,12 @@ export const uploadInvoice = tool({
           : 'http://localhost:3000/api/files/upload/process';
       }
 
-      console.log(`Sending request to process invoice at ${apiUrl} with fileReference: ${cleanedFilename}`);
-
       try {
         // Call the API endpoint to process the invoice
         const response = await fetch(apiUrl, {
           method: 'POST',
           body: formData,
         });
-
-        console.log(`API response status: ${response.status}`);
 
         if (!response.ok) {
           const errorData = await response.json();
@@ -168,7 +158,6 @@ export const uploadInvoice = tool({
 
         // Process the successful response
         const data = await response.json();
-        console.log('Successfully processed invoice data');
 
         // Get the invoice ID from the response
         const invoiceId = data.extractedData?.invoiceId || fileId;
@@ -265,7 +254,6 @@ export const uploadInvoice = tool({
 async function fetchInvoiceById(invoiceId: string) {
   try {
     if (!invoiceId) {
-      console.log('No invoice ID provided for fetch');
       return null;
     }
 
@@ -279,8 +267,6 @@ async function fetchInvoiceById(invoiceId: string) {
         : `http://localhost:3000/api/invoices/${invoiceId}`;
     }
 
-    console.log(`Fetching invoice data from API: ${apiUrl}`);
-
     const response = await fetch(apiUrl, {
       method: 'GET',
       headers: {
@@ -289,7 +275,6 @@ async function fetchInvoiceById(invoiceId: string) {
     });
 
     if (!response.ok) {
-      console.log(`API returned error status: ${response.status}`);
       return null;
     }
 

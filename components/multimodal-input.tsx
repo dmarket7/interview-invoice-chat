@@ -217,8 +217,6 @@ function PureMultimodalInput({
         }
       } else {
         // If no uploads, just submit with existing attachments - ensure no PDFs
-        console.log('DEBUG - Submitting with existing attachments:', JSON.stringify(attachments));
-
         // Process attachments to ensure no PDF mime types are sent directly
         const processedAttachments = attachments.map(attachment => {
           if (attachment.contentType === 'application/pdf') {
@@ -295,7 +293,6 @@ function PureMultimodalInput({
           if (data.isInvoice && data.csvData) {
             // Store invoice information for later use by the agent
             if (data.invoiceId) {
-              console.log('Setting invoice data:', data.invoiceId);
               setCurrentInvoiceId(data.invoiceId);
               setCurrentInvoiceFilename(pathname);
 

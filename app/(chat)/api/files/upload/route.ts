@@ -93,11 +93,9 @@ export async function POST(request: Request) {
 
       // If it's a PDF invoice, process it
       if (file.type === 'application/pdf' && formData.get('type') === 'invoice') {
-        console.log(`Processing invoice PDF: ${filename}`);
 
         try {
           const extractedData = await extractInvoiceData(buffer);
-          console.log('Successfully extracted invoice data');
           const dataURL = `data:${file.type};base64,${buffer.toString('base64')}`;
 
           // Validate that this is actually an invoice document
@@ -200,7 +198,6 @@ export async function POST(request: Request) {
 
           // Check for duplicate invoice before saving
           try {
-            console.log('Checking for duplicate invoice...');
             const duplicateCheckResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/invoices/check-duplicate`, {
               method: 'POST',
               headers: {
@@ -218,8 +215,6 @@ export async function POST(request: Request) {
             const duplicateCheck = await duplicateCheckResponse.json();
 
             if (duplicateCheck.isDuplicate) {
-              console.log(`Duplicate invoice found: ${extractedData.invoiceNumber} from ${extractedData.vendor} for ${extractedData.total}`);
-
               // Convert the extracted data to CSV format for sheet block (still needed for UI)
               const csvData = convertToCSV(extractedData);
 
@@ -262,8 +257,6 @@ export async function POST(request: Request) {
             updatedAt: now
           });
 
-          console.log(`Saved invoice to database with ID: ${invoiceId}`);
-
           // Insert line items
           if (extractedData.items && Array.isArray(extractedData.items)) {
             for (const item of extractedData.items) {
@@ -284,16 +277,10 @@ export async function POST(request: Request) {
                 updatedAt: now
               });
             }
-
-            console.log(`Saved ${extractedData.items.length} line items to database`);
           }
 
           // Convert the extracted data to CSV format for sheet block
           const csvData = convertToCSV(extractedData);
-
-          // Log the CSV data for debugging
-          console.log("Generated CSV data for invoice:");
-          console.log(csvData);
 
           // Get the base URL from environment variables or use an empty string as fallback
           const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
@@ -333,7 +320,6 @@ export async function POST(request: Request) {
 
       // Create data URL for immediate preview
       const dataURL = `data:${file.type};base64,${buffer.toString('base64')}`;
-      console.log(`File uploaded successfully: ${filename}`);
 
       return NextResponse.json({
         url: dataURL,
@@ -357,8 +343,6 @@ export async function POST(request: Request) {
 
 // Helper function to extract invoice data using regex patterns
 function extractInvoiceDataWithRegex(text: string) {
-  console.log('Extracting invoice data with regex patterns');
-
   // Replace newlines with spaces in the text for better pattern matching
   // but keep a version with newlines for line-by-line operations
   const flatText = text.replace(/\n/g, ' ');
@@ -547,18 +531,12 @@ function extractInvoiceDataWithRegex(text: string) {
 
   // If line items don't add up to total (with tolerance for rounding)
   if (items.length > 0 && Math.abs(itemsTotal - total) > 1) {
-    console.log(`Line items total (${itemsTotal}) doesn't match invoice total (${total}). Adjusting...`);
-
     // If the discrepancy is small relative to the total, adjust the total to match items
     if (Math.abs(itemsTotal - total) / total < 0.2 || confidence.items > confidence.total) {
       total = Number.parseFloat(itemsTotal.toFixed(2));
-      console.log(`Adjusted total to match line items: ${total}`);
     }
     // Otherwise, we keep the extracted total as it's likely more reliable
   }
-
-  // Log confidence scores for debugging
-  console.log('Extraction confidence scores:', confidence);
 
   return {
     invoiceNumber,
@@ -593,15 +571,11 @@ function findLargestAmount(text: string): number {
 // Helper function to extract data from PDF invoices
 async function extractInvoiceData(buffer: Buffer) {
   try {
-    console.log('Processing document extraction...');
-
     // Determine file type and choose appropriate strategies
     const fileSignature = buffer.slice(0, 4).toString('hex');
     const isPDF = fileSignature.startsWith('25504446'); // %PDF
     const isJPEG = fileSignature.startsWith('ffd8ff');
     const isPNG = fileSignature.startsWith('89504e47');
-
-    console.log(`Detected file type: ${isPDF ? 'PDF' : (isJPEG ? 'JPEG' : (isPNG ? 'PNG' : 'Unknown'))}`);
 
     // Store results from different extraction methods for comparison
     const extractionResults: any[] = [];
@@ -640,7 +614,6 @@ async function extractInvoiceData(buffer: Buffer) {
         extractionResults[0].data.items &&
         extractionResults[0].data.items.length > 0 &&
         extractionResults[0].data.total > 0) {
-        console.log('Skipping PDF.js extraction as Gemini Vision was successful');
       } else {
         // Only attempt PDF.js if Gemini wasn't successful
         try {
@@ -648,7 +621,6 @@ async function extractInvoiceData(buffer: Buffer) {
 
           // Skip PDF.js in serverless environment to avoid worker issues
           if (typeof window === 'undefined') {
-            console.log('Skipping PDF.js in server environment to avoid worker issues');
             extractedText = ''; // Skip PDF.js in server environment
           } else {
             // Only use PDF.js in browser environment where worker is available
@@ -685,7 +657,6 @@ async function extractInvoiceData(buffer: Buffer) {
 
             // Check if we got text from PDF.js
             if (pdfData && typeof pdfData === 'string' && pdfData.length > 100) {
-              console.log(`Extracted ${pdfData.length} characters using PDF.js`);
               extractedText = pdfData;
             }
           }
@@ -698,7 +669,6 @@ async function extractInvoiceData(buffer: Buffer) {
 
     // For images or if PDF extraction didn't yield enough text, try OCR
     if ((isJPEG || isPNG || extractedText.length < 100) && (!extractionResults.length || extractionResults[0].data.items.length === 0)) {
-      console.log('Skipping OCR due to configuration issues.');
       // Skip OCR for now and rely on other methods
       extractedText = ""; // Force to use regex as fallback
     }
@@ -733,14 +703,12 @@ async function extractInvoiceData(buffer: Buffer) {
 
     // If we have multiple results, merge them for better accuracy
     if (extractionResults.length > 1) {
-      console.log(`Merging results from ${extractionResults.length} extraction methods`);
       return mergeExtractionResults(extractionResults);
     } else if (extractionResults.length === 1) {
       return extractionResults[0].data;
     }
 
     // If all extraction methods fail, return a basic structure
-    console.log('All extraction methods failed, returning default structure');
     return {
       invoiceNumber: 'Unknown',
       date: new Date().toISOString().split('T')[0],
@@ -893,7 +861,6 @@ function mergeExtractionResults(results: Array<{ method: string, confidence: num
     // For each field, consider using the alternative value if current is empty/default
     Object.keys(result).forEach(field => {
       if (isEmptyOrDefault(merged[field], field) && !isEmptyOrDefault(result[field], field)) {
-        console.log(`Using ${field} from ${results[i].method} as it has better data`);
         merged[field] = result[field];
         methodUsed = true;
       }
@@ -904,7 +871,6 @@ function mergeExtractionResults(results: Array<{ method: string, confidence: num
         Array.isArray(result.items) &&
         result.items.length > merged.items.length &&
         merged.items.length <= 1) {
-        console.log(`Using items from ${results[i].method} as it has more line items (${result.items.length} vs ${merged.items.length})`);
         merged.items = result.items;
         methodUsed = true;
       }
@@ -934,8 +900,6 @@ async function processExtractedText(extractedText: string) {
     console.warn('OPENAI_API_KEY is not set. Using fallback extraction method.');
     return extractInvoiceDataWithRegex(extractedText);
   }
-
-  console.log('Sending text to OpenAI for extraction...');
 
   try {
     // Prompt the LLM to extract invoice data - upgraded to GPT-4 for better accuracy
@@ -991,8 +955,6 @@ Ensure all numeric values are properly parsed as numbers, not strings. Carefully
       response_format: { type: "json_object" }
     });
 
-    console.log('Successfully received extraction response from OpenAI');
-
     // Parse the LLM response to get structured data
     const llmResponse = response.choices[0].message.content.trim();
 
@@ -1008,7 +970,6 @@ Ensure all numeric values are properly parsed as numbers, not strings. Carefully
     }
   } catch (openaiError) {
     console.error('Error calling OpenAI API:', openaiError);
-    console.log('Falling back to regex extraction');
     return extractInvoiceDataWithRegex(extractedText);
   }
 }
@@ -1055,7 +1016,6 @@ function validateInvoiceData(data: any) {
       // Validate amount = quantity * unitPrice
       const calculatedAmount = normalizedItem.quantity * normalizedItem.unitPrice;
       if (Math.abs(calculatedAmount - normalizedItem.amount) > 0.1) {
-        console.log(`Correcting inconsistent line item amount: ${normalizedItem.amount} to ${calculatedAmount}`);
         normalizedItem.amount = Number.parseFloat(calculatedAmount.toFixed(2));
       }
 
@@ -1531,18 +1491,6 @@ function validateIsInvoice(extractedData: any): boolean {
     hasStatementStructure || hasReceiptStructure ||
     isCondoStatement || isEmptyInvoice ||
     hasNumericInconsistency) {
-    console.log('Document rejected for the following reasons:', {
-      isLikelyStatement,
-      isLikelyReceipt,
-      hasStatementStructure,
-      hasReceiptStructure,
-      isCondoStatement,
-      isEmptyInvoice,
-      hasNumericInconsistency,
-      subtotal: extractedData.subtotal,
-      total: extractedData.total,
-      lineItemCount: extractedData.items?.length || 0
-    });
     return false;
   }
 
@@ -1570,15 +1518,12 @@ async function preliminaryDocumentTypeCheck(file: Blob): Promise<boolean> {
             // First, do a quick check for empty line items with subtotal
             if ((!geminiData.items || geminiData.items.length === 0) &&
               (geminiData.subtotal > 0 || geminiData.total > 0)) {
-              console.log('Document appears to be a statement - has totals but no line items');
               return false;
             }
 
             // Check for major inconsistencies in totals
             if (Math.abs(geminiData.subtotal - geminiData.total) > 1000 ||
               (geminiData.subtotal > 1000 && geminiData.total < 100)) {
-              console.log('Document appears to be invalid - major inconsistencies in totals');
-              console.log(`Subtotal: ${geminiData.subtotal}, Total: ${geminiData.total}`);
               return false;
             }
 
@@ -1660,20 +1605,6 @@ async function preliminaryDocumentTypeCheck(file: Blob): Promise<boolean> {
               (/condominium|association|community|homeowner/i.test(allExtractedText)) &&
               (!geminiData.items || geminiData.items.length < 2);
 
-            // Log the extracted data for debugging
-            console.log('Document validation check:', {
-              vendor: geminiData.vendor,
-              customer: geminiData.customer,
-              invoiceNumber: geminiData.invoiceNumber,
-              itemCount: geminiData.items?.length || 0,
-              subtotal: geminiData.subtotal,
-              total: geminiData.total,
-              hasStatementKeywords,
-              hasReceiptKeywords,
-              hasStatementStructure,
-              hasReceiptStructure,
-              isCondoStatement
-            });
 
             // If any statement or receipt indicators are present, reject the file
             if (hasStatementKeywords || hasReceiptKeywords ||
@@ -1691,25 +1622,20 @@ async function preliminaryDocumentTypeCheck(file: Blob): Promise<boolean> {
               geminiData.invoiceNumber &&
               geminiData.invoiceNumber !== 'Unknown' &&
               Math.abs(geminiData.subtotal - geminiData.total) < 500) { // Ensure totals are reasonably close
-              console.log('Document appears to be a valid invoice');
               return true;
             }
 
             // If we get here, we couldn't confirm it's an invoice
-            console.log('Could not confirm document is a valid invoice');
             return false;
           } catch (error) {
-            console.error('Gemini preliminary check failed:', error);
             // Fall back to rejecting if we can't process properly
             return false;
           }
         }
 
-        console.log('Skipping PDF text extraction check due to configuration issues');
         return true; // Default to allowing - we'll rely on the main validation
 
       } catch (error) {
-        console.error('Error in preliminary document check:', error);
         // If we can't determine, we'll rely on the main validation
         return true;
       }

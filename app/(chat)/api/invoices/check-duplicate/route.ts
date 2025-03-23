@@ -38,8 +38,6 @@ export async function POST(request: Request) {
     // Convert total from dollars to cents for database comparison
     const totalCents = Math.round(total * 100);
 
-    console.log(`Checking for duplicate invoice: ${invoiceNumber}, ${vendor}, ${totalCents} cents`);
-
     // Query the database for an invoice with the same number, vendor, and amount
     const duplicateInvoices = await db
       .select()
@@ -54,7 +52,6 @@ export async function POST(request: Request) {
       .limit(1);
 
     const isDuplicate = duplicateInvoices.length > 0;
-    console.log(`Duplicate check result: ${isDuplicate ? 'Duplicate found' : 'No duplicate found'}`);
 
     if (isDuplicate) {
       // Return the duplicate invoice data
