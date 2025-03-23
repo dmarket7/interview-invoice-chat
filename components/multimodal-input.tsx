@@ -295,9 +295,6 @@ function PureMultimodalInput({
             if (data.invoiceId) {
               setCurrentInvoiceId(data.invoiceId);
               setCurrentInvoiceFilename(pathname);
-
-              // Show a toast to inform the user
-              toast.success('Invoice uploaded successfully! The AI will process it automatically.');
             }
 
             // Create a text representation instead of sending raw PDF
@@ -308,9 +305,6 @@ function PureMultimodalInput({
             // Instead of appending an assistant message, modify the user's input
             // to include the invoice information
             if (data.invoiceId) {
-              // Show success toast instead of appending a message
-              toast.success(`Invoice processed successfully with ID: ${data.invoiceId}`);
-
               // Store invoice ID and filename for the agent to use
               setCurrentInvoiceId(data.invoiceId);
               setCurrentInvoiceFilename(pathname);

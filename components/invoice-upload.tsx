@@ -50,7 +50,7 @@ export function InvoiceUpload() {
       const data = await response.json();
 
       if (data.isInvoice && data.csvData) {
-        toast.success(data.message);
+        toast.success('Invoice uploaded successfully!');
       } else {
         toast.error(data.message);
       }
