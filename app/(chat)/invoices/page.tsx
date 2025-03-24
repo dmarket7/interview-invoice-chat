@@ -1,5 +1,4 @@
-import { InvoiceUpload } from '@/components/invoice-upload';
-import { InvoiceTable } from '@/components/invoice-table';
+import { InvoiceClientContent } from './invoice-client';
 
 export const metadata = {
   title: 'Invoices',
@@ -16,11 +15,7 @@ export default function InvoicesPage() {
         </p>
       </div>
 
-      <div className="w-full md:w-1/3">
-        <InvoiceUpload />
-      </div>
-
-      <InvoiceTable />
+      <InvoiceClientContent />
     </div>
   );
 }

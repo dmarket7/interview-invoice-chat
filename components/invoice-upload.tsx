@@ -7,8 +7,11 @@ import { toast } from 'sonner';
 import { ChevronDown } from 'lucide-react';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 
+interface InvoiceUploadProps {
+  onUploadSuccess?: () => void;
+}
 
-export function InvoiceUpload() {
+export function InvoiceUpload({ onUploadSuccess }: InvoiceUploadProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [file, setFile] = useState<File | null>(null);
 
@@ -51,6 +54,10 @@ export function InvoiceUpload() {
 
       if (data.isInvoice && data.csvData) {
         toast.success('Invoice uploaded successfully!');
+        // Call the callback to notify parent that upload succeeded
+        if (onUploadSuccess) {
+          onUploadSuccess();
+        }
       } else {
         toast.error(data.message);
       }

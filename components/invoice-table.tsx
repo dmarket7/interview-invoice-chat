@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useImperativeHandle, forwardRef } from 'react';
 import {
   Table,
   TableHeader,
@@ -38,7 +38,17 @@ type LineItem = {
   amount: number | null;
 };
 
-export function InvoiceTable() {
+// Create a ref type for the component
+export type InvoiceTableRef = {
+  refetchInvoices: () => Promise<void>;
+};
+
+type InvoiceTableProps = {
+  // Add any props here if needed
+};
+
+// Convert to forwardRef to expose the refetch method
+export const InvoiceTable = forwardRef<InvoiceTableRef, InvoiceTableProps>(function InvoiceTable(props, ref) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -52,22 +62,29 @@ export function InvoiceTable() {
   const [sortField, setSortField] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
-  // Load invoices and line items
-  useEffect(() => {
-    async function loadInvoices() {
-      try {
-        const response = await fetch('/api/invoices');
-        if (!response.ok) throw new Error('Failed to load invoices');
-        const data = await response.json();
-        setInvoices(data);
-      } catch (error) {
-        console.error('Error loading invoices:', error);
-        toast.error('Failed to load invoices');
-      } finally {
-        setLoading(false);
-      }
+  // Function to load invoices from the API
+  const loadInvoices = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/invoices');
+      if (!response.ok) throw new Error('Failed to load invoices');
+      const data = await response.json();
+      setInvoices(data);
+    } catch (error) {
+      console.error('Error loading invoices:', error);
+      toast.error('Failed to load invoices');
+    } finally {
+      setLoading(false);
     }
+  };
 
+  // Expose the refetch method via ref
+  useImperativeHandle(ref, () => ({
+    refetchInvoices: loadInvoices
+  }));
+
+  // Load invoices on mount
+  useEffect(() => {
     loadInvoices();
   }, []);
 
@@ -498,4 +515,4 @@ export function InvoiceTable() {
       </div>
     </div>
   );
-}
+});
