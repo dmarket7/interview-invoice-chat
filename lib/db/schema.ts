@@ -99,3 +99,32 @@ export const suggestion = sqliteTable(
 );
 
 export type Suggestion = InferSelectModel<typeof suggestion>;
+
+export const invoice = sqliteTable('Invoice', {
+  id: text('id').primaryKey().notNull(),
+  customerName: text('customerName').notNull(),
+  vendorName: text('vendorName').notNull(),
+  invoiceNumber: text('invoiceNumber').notNull(),
+  invoiceDate: integer('invoiceDate', { mode: 'timestamp' }),
+  dueDate: integer('dueDate', { mode: 'timestamp' }),
+  amount: integer('amount'), // Stored in cents
+  createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updatedAt', { mode: 'timestamp' }).notNull(),
+});
+
+export type Invoice = InferSelectModel<typeof invoice>;
+
+export const lineItem = sqliteTable('LineItem', {
+  id: text('id').primaryKey().notNull(),
+  invoiceId: text('invoiceId')
+    .notNull()
+    .references(() => invoice.id),
+  description: text('description'),
+  quantity: integer('quantity'),
+  unitPrice: integer('unitPrice'), // Stored in cents
+  amount: integer('amount'), // Stored in cents
+  createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updatedAt', { mode: 'timestamp' }).notNull(),
+});
+
+export type LineItem = InferSelectModel<typeof lineItem>;

@@ -25,16 +25,33 @@ import { createDocument } from '@/lib/ai/tools/create-document';
 import { updateDocument } from '@/lib/ai/tools/update-document';
 import { requestSuggestions } from '@/lib/ai/tools/request-suggestions';
 import { getWeather } from '@/lib/ai/tools/get-weather';
+import { uploadInvoice } from '@/lib/ai/tools/upload-invoice';
 
 export const maxDuration = 60;
+
+// Define types for multipart message content
+interface TextContent {
+  type: 'text';
+  text: string;
+}
+
+interface AttachmentContent {
+  type: 'attachment';
+  attachment: {
+    content_type: string;
+    name: string;
+    url?: string;
+  };
+}
 
 export async function POST(request: Request) {
   const {
     id,
     messages,
     selectedChatModel,
-  }: { id: string; messages: Array<Message>; selectedChatModel: string } =
+  }: { id: string; messages: Array<Message>; selectedChatModel: string; } =
     await request.json();
+
 
   const session = await auth();
 
@@ -70,21 +87,38 @@ export async function POST(request: Request) {
           selectedChatModel === 'chat-model-reasoning'
             ? []
             : [
-                'getWeather',
-                'createDocument',
-                'updateDocument',
-                'requestSuggestions',
-              ],
+              'getWeather',
+              'createDocument',
+              'updateDocument',
+              'requestSuggestions',
+              'uploadInvoice',
+            ],
         experimental_transform: smoothStream({ chunking: 'word' }),
         experimental_generateMessageId: generateUUID,
         tools: {
           getWeather,
-          createDocument: createDocument({ session, dataStream }),
-          updateDocument: updateDocument({ session, dataStream }),
+          createDocument: createDocument({
+            session: {
+              ...session,
+              expires: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+            },
+            dataStream
+          }),
+          updateDocument: updateDocument({
+            session: {
+              ...session,
+              expires: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+            },
+            dataStream
+          }),
           requestSuggestions: requestSuggestions({
-            session,
+            session: {
+              ...session,
+              expires: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+            },
             dataStream,
           }),
+          uploadInvoice,
         },
         onFinish: async ({ response, reasoning }) => {
           if (session.user?.id) {
@@ -97,7 +131,7 @@ export async function POST(request: Request) {
               await saveMessages({
                 messages: sanitizedResponseMessages.map((message) => {
                   return {
-                    id: message.id,
+                    id: `msg-${Date.now()}-${message.id}`,
                     chatId: id,
                     role: message.role,
                     content: message.content,
@@ -120,8 +154,13 @@ export async function POST(request: Request) {
         sendReasoning: true,
       });
     },
-    onError: () => {
-      return 'Oops, an error occured!';
+    onError: (error) => {
+      console.error('Error in chat stream:', error);
+      // Handle different error types safely
+      const errorMessage = error instanceof Error
+        ? error.message
+        : (typeof error === 'string' ? error : 'Unknown error');
+      return `An error occurred while processing your request: ${errorMessage}`;
     },
   });
 }

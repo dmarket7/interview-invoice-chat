@@ -29,6 +29,7 @@ function PureMessages({
   setMessages,
   reload,
   isReadonly,
+  isBlockVisible,
 }: MessagesProps) {
   const [messagesContainerRef, messagesEndRef] =
     useScrollToBottom<HTMLDivElement>();

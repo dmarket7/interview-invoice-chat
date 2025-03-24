@@ -43,11 +43,19 @@ export function getLocalStorage(key: string) {
 }
 
 export function generateUUID(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+  // Add timestamp prefix to ensure uniqueness
+  const timestamp = Date.now().toString(36);
+
+  // Additional entropy with random component
+  const randomPart = Math.random().toString(36).substring(2, 15);
+
+  // Traditional UUID pattern with timestamp prefix for uniqueness
+  return `${timestamp}-${randomPart}-${'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
     return v.toString(16);
-  });
+  })
+    }`;
 }
 
 function addToolMessageToChat({
@@ -130,7 +138,7 @@ export function convertToUIMessages(
 }
 
 type ResponseMessageWithoutId = CoreToolMessage | CoreAssistantMessage;
-type ResponseMessage = ResponseMessageWithoutId & { id: string };
+type ResponseMessage = ResponseMessageWithoutId & { id: string; };
 
 export function sanitizeResponseMessages({
   messages,
@@ -226,4 +234,35 @@ export function getDocumentTimestampByIndex(
   if (index > documents.length) return new Date();
 
   return documents[index].createdAt;
+}
+
+// This is a utility function to filter out tool-related messages
+export function filterToolMessages(messages: Array<Message>): Array<Message> {
+  return messages.filter(msg => {
+    // Create an array of roles that should be hidden from the user
+    const hiddenRoles = ['system', 'tool-call', 'tool-result', 'function', 'data'];
+
+    // First check if the role should be hidden
+    if (hiddenRoles.includes(msg.role as string)) {
+      return false;
+    }
+
+    // Then check if the message has tool invocations
+    if (msg.toolInvocations && msg.toolInvocations.length > 0) {
+      return false;
+    }
+
+    // Then check if the content contains tool-related data
+    if (Array.isArray(msg.content)) {
+      // Check if any item in the content array is a tool call or tool result
+      return !msg.content.some(item =>
+        item.type === 'tool-call' ||
+        item.type === 'tool-result' ||
+        item.type === 'function'
+      );
+    }
+
+    // Keep messages with regular string content
+    return true;
+  });
 }
